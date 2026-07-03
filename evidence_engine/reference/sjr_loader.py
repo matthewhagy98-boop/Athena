@@ -34,7 +34,7 @@ def load_sjr_csv(session: Session, csv_path: str) -> int:
                         )
                     )
                 count += 1
-            except (KeyError, ValueError) as e:
+            except (KeyError, ValueError, TypeError, AttributeError) as e:
                 logger.warning(
                     f"Skipping malformed row {row_number}: {type(e).__name__}: {e}"
                 )
