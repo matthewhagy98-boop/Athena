@@ -19,6 +19,8 @@ def test_topic_and_paper_round_trip(db_session):
     db_session.add(paper)
     db_session.flush()
 
+    db_session.expire_all()
+
     fetched_topic = db_session.get(Topic, topic.id)
     fetched_paper = db_session.get(Paper, paper.id)
 
