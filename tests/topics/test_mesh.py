@@ -1,3 +1,4 @@
+import pytest
 import httpx
 import respx
 
@@ -43,3 +44,14 @@ def test_resolve_to_mesh_returns_none_when_no_match():
     result = resolve_to_mesh("not a real medical term xyz")
 
     assert result is None
+
+
+@respx.mock
+def test_resolve_to_mesh_reraises_original_exception_on_retry_exhaustion():
+    """Verify that retry exhaustion re-raises the original exception, not tenacity.RetryError."""
+    respx.get(ESEARCH_URL).mock(
+        return_value=httpx.Response(500)
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        resolve_to_mesh("heart attack")

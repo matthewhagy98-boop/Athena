@@ -23,7 +23,7 @@ def _api_params() -> dict:
     return params
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
 def resolve_to_mesh(term: str) -> MeshResolution | None:
     with httpx.Client(timeout=10.0) as client:
         search_resp = client.get(
