@@ -116,3 +116,14 @@ class ChangeEvent(Base):
     paper_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("papers.id"), nullable=True)
     event_type: Mapped[ChangeEventType] = mapped_column()
     detected_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
+class JournalSJR(Base):
+    __tablename__ = "journal_sjr"
+    __table_args__ = (UniqueConstraint("issn", "year"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    issn: Mapped[str] = mapped_column(String, nullable=False)
+    journal_name: Mapped[str] = mapped_column(String, nullable=False)
+    sjr_score: Mapped[float] = mapped_column(nullable=False)
+    year: Mapped[int] = mapped_column(nullable=False)
