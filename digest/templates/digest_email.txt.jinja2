@@ -1,0 +1,5 @@
+Your Weekly Research Digest
+{% for section in sections %}
+== {{ section.topic_label }} ==
+{{ section.narrative }}
+{% endfor %}
