@@ -95,4 +95,8 @@ def downgrade() -> None:
     op.drop_table('digest_runs')
     op.drop_table('delivery_preferences')
     op.drop_table('users')
+    # Drop ENUM types after all tables have been dropped
+    sa.Enum(name="digestfrequency").drop(op.get_bind())
+    sa.Enum(name="digestrunstatus").drop(op.get_bind())
+    sa.Enum(name="emailsendresult").drop(op.get_bind())
     # ### end Alembic commands ###
