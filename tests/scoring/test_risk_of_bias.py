@@ -47,3 +47,15 @@ def test_detect_risk_of_bias_returns_no_flags_without_abstract():
     result = detect_risk_of_bias(paper)
     assert result.flags == []
     assert result.penalty == 0.0
+
+
+@respx.mock
+def test_detect_risk_of_bias_returns_safe_default_when_api_call_fails():
+    respx.post(MESSAGES_URL).mock(return_value=httpx.Response(500))
+
+    paper = Paper(title="A trial", abstract="We conducted an open-label trial of 20 patients...")
+    result = detect_risk_of_bias(paper)
+
+    assert result.flags == []
+    assert result.quality_breakdown == ""
+    assert result.penalty == 0.0

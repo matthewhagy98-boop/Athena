@@ -84,7 +84,7 @@ def run_topic_cycle(
 
     consensus_changed = (
         previous_consensus is None
-        or new_consensus.consensus_text != previous_consensus.consensus_text
+        or set(new_consensus.supporting_paper_ids) != set(previous_consensus.supporting_paper_ids)
         or new_consensus.is_insufficient_evidence != previous_consensus.is_insufficient_evidence
     )
     if consensus_changed:

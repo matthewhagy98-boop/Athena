@@ -43,3 +43,31 @@ def test_classify_study_type_falls_back_to_llm_when_tag_missing():
 def test_classify_study_type_returns_unknown_without_abstract():
     paper = Paper(title="A study", abstract=None, publication_types=[])
     assert classify_study_type(paper) == StudyType.UNKNOWN
+
+
+@respx.mock
+def test_classify_study_type_returns_unknown_for_out_of_enum_llm_value():
+    respx.post(MESSAGES_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-6",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "classify_study",
+                        "input": {"study_type": "not_a_real_type"},
+                    }
+                ],
+                "stop_reason": "tool_use",
+                "usage": {"input_tokens": 50, "output_tokens": 10},
+            },
+        )
+    )
+
+    paper = Paper(title="A study", abstract="We followed 500 patients over five years...", publication_types=[])
+    assert classify_study_type(paper) == StudyType.UNKNOWN

@@ -1,6 +1,5 @@
-from evidence_engine.config import get_settings
 from evidence_engine.db.models import Paper, StudyType
-from evidence_engine.llm.client import get_anthropic_client
+from evidence_engine.llm.client import call_forced_tool
 
 PUBLICATION_TYPE_MAP = {
     "Meta-Analysis": StudyType.META_ANALYSIS,
@@ -35,20 +34,12 @@ def classify_study_type(paper: Paper) -> StudyType:
     if not paper.abstract:
         return StudyType.UNKNOWN
 
-    client = get_anthropic_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=100,
-        tools=[CLASSIFY_TOOL],
-        tool_choice={"type": "tool", "name": "classify_study"},
-        messages=[
-            {
-                "role": "user",
-                "content": f"Title: {paper.title}\n\nAbstract: {paper.abstract}",
-            }
-        ],
-    )
-    for block in response.content:
-        if block.type == "tool_use" and block.input.get("study_type"):
-            return StudyType(block.input["study_type"])
+    prompt = f"Title: {paper.title}\n\nAbstract: {paper.abstract}"
+    result = call_forced_tool(prompt, CLASSIFY_TOOL, max_tokens=100)
+
+    if result and result.get("study_type"):
+        try:
+            return StudyType(result["study_type"])
+        except ValueError:
+            return StudyType.UNKNOWN
     return StudyType.UNKNOWN

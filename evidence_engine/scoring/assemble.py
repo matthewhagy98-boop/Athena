@@ -52,6 +52,7 @@ def score_paper(session: Session, paper: Paper, citation_count: int, model_versi
     score.evidence_tier = tier
     score.quality_breakdown = risk_result.quality_breakdown
     score.model_version = model_version
+    score.is_pending = False
 
     if not existing:
         session.add(score)

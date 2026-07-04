@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import patch
 
 from evidence_engine.adapters.base import RawPaper
@@ -28,6 +29,7 @@ def test_run_topic_cycle_isolates_adapter_failure_and_scores_new_paper(db_sessio
         topic_id=topic.id,
         consensus_text="Old consensus text",
         is_insufficient_evidence=False,
+        supporting_paper_ids=[],
         model_version="v1",
     )
     db_session.add(prior_consensus)
@@ -37,7 +39,11 @@ def test_run_topic_cycle_isolates_adapter_failure_and_scores_new_paper(db_sessio
     adapters = [_FailingAdapter(), _WorkingAdapter([raw_paper])]
 
     fake_consensus = ConsensusSnapshot(
-        topic_id=topic.id, consensus_text="Consensus text", is_insufficient_evidence=False, model_version="v1"
+        topic_id=topic.id,
+        consensus_text="Consensus text",
+        is_insufficient_evidence=False,
+        supporting_paper_ids=[uuid.uuid4()],
+        model_version="v1",
     )
 
     with (
@@ -98,6 +104,7 @@ def test_run_topic_cycle_checks_contradiction_against_previous_consensus_not_new
         topic_id=topic.id,
         consensus_text="OLD CONSENSUS",
         is_insufficient_evidence=False,
+        supporting_paper_ids=[],
         model_version="v1",
     )
     db_session.add(previous_consensus)
@@ -107,6 +114,7 @@ def test_run_topic_cycle_checks_contradiction_against_previous_consensus_not_new
         topic_id=topic.id,
         consensus_text="NEW CONSENSUS",
         is_insufficient_evidence=False,
+        supporting_paper_ids=[],
         model_version="v1",
     )
 
@@ -128,3 +136,46 @@ def test_run_topic_cycle_checks_contradiction_against_previous_consensus_not_new
     assert called_consensus is previous_consensus
     assert called_consensus.consensus_text == "OLD CONSENSUS"
     assert called_consensus is not new_consensus
+
+
+def test_run_topic_cycle_does_not_flag_consensus_updated_when_supporting_papers_unchanged(db_session):
+    topic = Topic(canonical_label="Myocardial Infarction", mesh_id="68009203")
+    db_session.add(topic)
+    db_session.flush()
+
+    shared_paper_id = uuid.uuid4()
+
+    previous_consensus = ConsensusSnapshot(
+        topic_id=topic.id,
+        consensus_text="Old prose describing the evidence.",
+        is_insufficient_evidence=False,
+        supporting_paper_ids=[shared_paper_id],
+        model_version="v1",
+    )
+    db_session.add(previous_consensus)
+    db_session.flush()
+
+    new_consensus = ConsensusSnapshot(
+        topic_id=topic.id,
+        consensus_text="Completely reworded prose, same underlying evidence.",
+        is_insufficient_evidence=False,
+        supporting_paper_ids=[shared_paper_id],
+        model_version="v1",
+    )
+
+    raw_paper = RawPaper(source="pubmed", pmid="12345678", title="A new trial", abstract="...")
+
+    with (
+        patch("evidence_engine.orchestrator.cycle.score_paper"),
+        patch("evidence_engine.orchestrator.cycle.synthesize_consensus", return_value=new_consensus),
+        patch(
+            "evidence_engine.orchestrator.cycle.detect_contradiction",
+            return_value=ContradictionResult(False, None),
+        ),
+        patch("evidence_engine.orchestrator.cycle.recheck_retractions", return_value=[]),
+    ):
+        run_topic_cycle(db_session, topic, model_version="v1", adapters=[_WorkingAdapter([raw_paper])])
+
+    events = db_session.query(ChangeEvent).filter_by(topic_id=topic.id).all()
+    event_types = {e.event_type for e in events}
+    assert ChangeEventType.CONSENSUS_UPDATED not in event_types

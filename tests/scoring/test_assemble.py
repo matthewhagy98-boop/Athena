@@ -88,6 +88,32 @@ def test_score_paper_reuses_existing_score_on_second_call(db_session):
     assert len(all_scores) == 1
 
 
+def test_score_paper_clears_is_pending_flag_on_success(db_session):
+    paper = Paper(
+        title="A cohort study",
+        abstract="We followed 500 patients...",
+        journal_issn=None,
+        publication_types=["Randomized Controlled Trial"],
+    )
+    db_session.add(paper)
+    db_session.flush()
+
+    pending_score = Score(paper_id=paper.id, is_pending=True, model_version="v0")
+    db_session.add(pending_score)
+    db_session.flush()
+
+    with (
+        patch("evidence_engine.scoring.assemble.extract_sample_size", return_value=500),
+        patch(
+            "evidence_engine.scoring.assemble.detect_risk_of_bias",
+            return_value=RiskOfBiasResult(flags=[], quality_breakdown="Fine.", penalty=0.0),
+        ),
+    ):
+        score = score_paper(db_session, paper, citation_count=10, model_version="v1")
+
+    assert score.is_pending is False
+
+
 def test_latest_sjr_picks_highest_year(db_session):
     older = JournalSJR(issn="1234-5678", journal_name="Old Journal Snapshot", sjr_score=2.0, year=2020)
     newer = JournalSJR(issn="1234-5678", journal_name="Old Journal Snapshot", sjr_score=8.0, year=2024)

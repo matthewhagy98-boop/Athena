@@ -1,9 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from evidence_engine.config import get_settings
 from evidence_engine.db.models import ConsensusSnapshot, Paper, PaperTopic, Score, StudyType, Topic
-from evidence_engine.llm.client import get_anthropic_client
+from evidence_engine.llm.client import call_forced_tool
 
 TOP_TIER_TYPES = {StudyType.META_ANALYSIS, StudyType.SYSTEMATIC_REVIEW}
 MIN_TOP_TIER_PAPERS = 2
@@ -33,6 +32,7 @@ def get_top_tier_scores(session: Session, topic: Topic) -> list[Score]:
             .join(Paper, Score.paper_id == Paper.id)
             .join(PaperTopic, PaperTopic.paper_id == Paper.id)
             .where(PaperTopic.topic_id == topic.id, Paper.is_retracted.is_(False))
+            .order_by(Score.paper_id)
         )
         .scalars()
         .all()
@@ -58,24 +58,15 @@ def synthesize_consensus(session: Session, topic: Topic, model_version: str) -> 
     listing = "\n\n".join(
         f"[{i}] {s.paper.title}\nAbstract: {s.paper.abstract}" for i, s in enumerate(top_tier)
     )
-    client = get_anthropic_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=1000,
-        tools=[SYNTHESIZE_TOOL],
-        tool_choice={"type": "tool", "name": "synthesize_consensus"},
-        messages=[
-            {"role": "user", "content": f"Topic: {topic.canonical_label}\n\nPapers:\n{listing}"}
-        ],
-    )
+    prompt = f"Topic: {topic.canonical_label}\n\nPapers:\n{listing}"
+    result = call_forced_tool(prompt, SYNTHESIZE_TOOL, max_tokens=1000)
 
     consensus_text = None
     supporting_ids = []
-    for block in response.content:
-        if block.type == "tool_use":
-            consensus_text = block.input.get("consensus_text")
-            indices = block.input.get("supporting_indices", [])
-            supporting_ids = [top_tier[i].paper_id for i in indices if 0 <= i < len(top_tier)]
+    if result:
+        consensus_text = result.get("consensus_text")
+        indices = result.get("supporting_indices", [])
+        supporting_ids = [top_tier[i].paper_id for i in indices if 0 <= i < len(top_tier)]
 
     snapshot = ConsensusSnapshot(
         topic_id=topic.id,

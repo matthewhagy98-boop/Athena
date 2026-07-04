@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 
-from evidence_engine.config import get_settings
 from evidence_engine.db.models import Paper
-from evidence_engine.llm.client import get_anthropic_client
+from evidence_engine.llm.client import call_forced_tool
 
 FLAG_PENALTIES = {
     "no_control_group": 15.0,
@@ -42,26 +41,15 @@ def detect_risk_of_bias(paper: Paper) -> RiskOfBiasResult:
     if not paper.abstract:
         return RiskOfBiasResult(flags=[], quality_breakdown="", penalty=0.0)
 
-    client = get_anthropic_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=500,
-        tools=[ASSESS_TOOL],
-        tool_choice={"type": "tool", "name": "assess_risk_of_bias"},
-        messages=[
-            {
-                "role": "user",
-                "content": f"Title: {paper.title}\n\nAbstract: {paper.abstract}",
-            }
-        ],
-    )
-    for block in response.content:
-        if block.type == "tool_use":
-            flags = block.input.get("flags", [])
-            penalty = min(MAX_PENALTY, sum(FLAG_PENALTIES.get(f, 0.0) for f in flags))
-            return RiskOfBiasResult(
-                flags=flags,
-                quality_breakdown=block.input.get("quality_breakdown", ""),
-                penalty=penalty,
-            )
+    prompt = f"Title: {paper.title}\n\nAbstract: {paper.abstract}"
+    result = call_forced_tool(prompt, ASSESS_TOOL, max_tokens=500)
+
+    if result:
+        flags = result.get("flags", [])
+        penalty = min(MAX_PENALTY, sum(FLAG_PENALTIES.get(f, 0.0) for f in flags))
+        return RiskOfBiasResult(
+            flags=flags,
+            quality_breakdown=result.get("quality_breakdown", ""),
+            penalty=penalty,
+        )
     return RiskOfBiasResult(flags=[], quality_breakdown="", penalty=0.0)

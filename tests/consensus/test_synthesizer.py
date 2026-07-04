@@ -41,6 +41,11 @@ def test_synthesize_consensus_grounds_text_in_top_tier_papers(db_session):
     _link(db_session, topic, "Meta-analysis A", "Pooled 10 trials, n=5000...", StudyType.META_ANALYSIS)
     paper_b, _ = _link(db_session, topic, "Systematic review B", "Reviewed 8 RCTs...", StudyType.SYSTEMATIC_REVIEW)
 
+    # get_top_tier_scores is ordered deterministically by Score.paper_id, so figure out
+    # paper_b's actual position in that order rather than assuming insertion order.
+    ordered_top_tier = get_top_tier_scores(db_session, topic)
+    paper_b_index = next(i for i, s in enumerate(ordered_top_tier) if s.paper_id == paper_b.id)
+
     respx.post(MESSAGES_URL).mock(
         return_value=httpx.Response(
             200,
@@ -56,7 +61,7 @@ def test_synthesize_consensus_grounds_text_in_top_tier_papers(db_session):
                         "name": "synthesize_consensus",
                         "input": {
                             "consensus_text": "Across pooled trials, treatment reduces risk.",
-                            "supporting_indices": [1],
+                            "supporting_indices": [paper_b_index],
                         },
                     }
                 ],

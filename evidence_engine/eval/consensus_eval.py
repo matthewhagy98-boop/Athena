@@ -1,8 +1,7 @@
 import json
 from dataclasses import dataclass
 
-from evidence_engine.config import get_settings
-from evidence_engine.llm.client import get_anthropic_client
+from evidence_engine.llm.client import call_forced_tool
 
 JUDGE_TOOL = {
     "name": "judge_consensus",
@@ -40,17 +39,10 @@ def judge_consensus_text(consensus_text: str, expected_themes: list[str], forbid
         "Judge whether the paragraph includes all expected themes and none of the forbidden claims."
     )
 
-    client = get_anthropic_client()
-    response = client.messages.create(
-        model=get_settings().anthropic_model,
-        max_tokens=300,
-        tools=[JUDGE_TOOL],
-        tool_choice={"type": "tool", "name": "judge_consensus"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    for block in response.content:
-        if block.type == "tool_use":
-            return JudgeResult(passed=block.input.get("passed", False), reasoning=block.input.get("reasoning", ""))
+    result = call_forced_tool(prompt, JUDGE_TOOL, max_tokens=300)
+
+    if result:
+        return JudgeResult(passed=result.get("passed", False), reasoning=result.get("reasoning", ""))
     return JudgeResult(passed=False, reasoning="No judgment returned")
 
 
