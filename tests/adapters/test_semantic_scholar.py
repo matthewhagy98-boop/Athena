@@ -45,3 +45,36 @@ def test_fetch_new_returns_parsed_raw_papers():
     assert paper.citation_count == 42
     assert paper.pub_date == date(2024, 3, 15)
     assert paper.authors == ["Jane Smith", "Alan Doe"]
+
+
+@respx.mock
+def test_fetch_new_handles_null_authors():
+    respx.get(SEARCH_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "paperId": "def456",
+                        "title": "Some Research Study",
+                        "abstract": "An abstract here...",
+                        "publicationDate": "2024-01-10",
+                        "citationCount": 10,
+                        "influentialCitationCount": 1,
+                        "journal": {"name": "Nature"},
+                        "externalIds": {"DOI": "10.1038/example.2024.002"},
+                        "authors": None,
+                    }
+                ]
+            },
+        )
+    )
+
+    topic = Topic(canonical_label="Cancer Research", mesh_id="68002310")
+    adapter = SemanticScholarAdapter()
+    papers = adapter.fetch_new(topic, since=None)
+
+    assert len(papers) == 1
+    paper = papers[0]
+    assert paper.semantic_scholar_id == "def456"
+    assert paper.authors == []

@@ -40,7 +40,7 @@ class SemanticScholarAdapter:
             pmid=external_ids.get("PubMed"),
             title=record.get("title"),
             abstract=record.get("abstract"),
-            authors=[a["name"] for a in record.get("authors", []) if a.get("name")],
+            authors=[a["name"] for a in (record.get("authors") or []) if a.get("name")],
             journal=(record.get("journal") or {}).get("name"),
             pub_date=pub_date,
             citation_count=record.get("citationCount"),
