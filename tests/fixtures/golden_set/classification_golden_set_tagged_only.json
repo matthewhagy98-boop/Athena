@@ -1,0 +1,32 @@
+[
+  {
+    "title": "T1 tagged RCT",
+    "abstract": "Patients were randomly assigned to receive Drug X or placebo...",
+    "publication_types": ["Randomized Controlled Trial"],
+    "expected_study_type": "rct"
+  },
+  {
+    "title": "T2 tagged meta-analysis",
+    "abstract": "We performed a meta-analysis pooling data from 12 randomized trials...",
+    "publication_types": ["Meta-Analysis"],
+    "expected_study_type": "meta_analysis"
+  },
+  {
+    "title": "T3 tagged systematic review",
+    "abstract": "We systematically searched three databases and reviewed 40 studies...",
+    "publication_types": ["Systematic Review"],
+    "expected_study_type": "systematic_review"
+  },
+  {
+    "title": "T4 tagged case report",
+    "abstract": "We report a 45-year-old patient who developed...",
+    "publication_types": ["Case Reports"],
+    "expected_study_type": "case_series"
+  },
+  {
+    "title": "T5 deliberately wrong expectation",
+    "abstract": "In this comment, we discuss the preceding article...",
+    "publication_types": ["Comment"],
+    "expected_study_type": "case_series"
+  }
+]

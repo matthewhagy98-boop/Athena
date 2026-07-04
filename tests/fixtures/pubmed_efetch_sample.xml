@@ -1,0 +1,31 @@
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation>
+      <PMID>12345678</PMID>
+      <Article>
+        <Journal>
+          <ISSN>0140-6736</ISSN>
+          <Title>The Lancet</Title>
+        </Journal>
+        <ArticleTitle>Effect of Drug X on Outcome Y</ArticleTitle>
+        <Abstract>
+          <AbstractText>This randomized controlled trial examined...</AbstractText>
+        </Abstract>
+        <AuthorList>
+          <Author><LastName>Smith</LastName><ForeName>Jane</ForeName></Author>
+          <Author><LastName>Doe</LastName><ForeName>Alan</ForeName></Author>
+        </AuthorList>
+        <ELocationID EIdType="doi">10.1016/example.2024.001</ELocationID>
+      </Article>
+      <MedlineJournalInfo/>
+    </MedlineCitation>
+    <PubmedData>
+      <History>
+        <PubMedPubDate PubStatus="pubmed"><Year>2024</Year><Month>03</Month><Day>15</Day></PubMedPubDate>
+      </History>
+      <PublicationTypeList>
+        <PublicationType>Randomized Controlled Trial</PublicationType>
+      </PublicationTypeList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>
