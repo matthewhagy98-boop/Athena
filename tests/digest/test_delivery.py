@@ -23,7 +23,26 @@ def test_smtp_sender_success_calls_sendmail():
         outcome = sender.send("researcher@example.com", "Subject", "<html>body</html>", "body")
 
     assert outcome.result == EmailSendResult.SUCCESS
+
+    # Verify sendmail was called with correct arguments
     mock_server.sendmail.assert_called_once()
+    call_args = mock_server.sendmail.call_args
+
+    # Unpack positional arguments: from_address, recipients, message_string
+    from_address = call_args[0][0]
+    recipients = call_args[0][1]
+    message_string = call_args[0][2]
+
+    # Assert from-address is correct
+    assert from_address == "digest@example.com"
+
+    # Assert recipient list is correct
+    assert recipients == ["researcher@example.com"]
+
+    # Assert message contains expected subject and body content
+    assert "Subject: Subject" in message_string
+    assert "body" in message_string
+    assert "<html>body</html>" in message_string
 
 
 def test_smtp_sender_failure_returns_failure_outcome():
