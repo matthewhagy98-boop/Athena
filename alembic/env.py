@@ -7,6 +7,7 @@ from alembic import context
 
 from evidence_engine.config import get_settings
 from evidence_engine.db.models import Base
+import digest.models  # noqa: F401 - import to register digest models with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
