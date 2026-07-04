@@ -6,7 +6,8 @@ from jinja2 import Environment, FileSystemLoader
 from digest.compose import ComposedDigest
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+_html_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
+_text_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=False)
 
 
 @dataclass
@@ -23,8 +24,8 @@ def _subject_for(composed: ComposedDigest) -> str:
 
 
 def render_digest(composed: ComposedDigest, user_email: str) -> RenderedDigest:
-    html_template = _env.get_template("digest_email.html.jinja2")
-    text_template = _env.get_template("digest_email.txt.jinja2")
+    html_template = _html_env.get_template("digest_email.html.jinja2")
+    text_template = _text_env.get_template("digest_email.txt.jinja2")
 
     return RenderedDigest(
         subject=_subject_for(composed),
