@@ -1,0 +1,14 @@
+[
+  {
+    "topic_label": "Myocardial Infarction",
+    "consensus_text": "Meta-analyses and systematic reviews of aspirin therapy following myocardial infarction consistently show a reduction in recurrent cardiovascular events and mortality, with benefit most pronounced when started early post-event.",
+    "expected_themes": ["aspirin reduces recurrent cardiovascular events", "benefit is well established in high-quality evidence"],
+    "forbidden_claims": ["aspirin has no effect", "aspirin is harmful in all patients"]
+  },
+  {
+    "topic_label": "Long COVID",
+    "consensus_text": "Evidence on effective treatments for long COVID remains limited, with most available studies being small observational cohorts rather than randomized trials; no single intervention has yet been established as consistently effective.",
+    "expected_themes": ["evidence base is still limited", "no single treatment is firmly established"],
+    "forbidden_claims": ["a specific drug has been proven to cure long COVID"]
+  }
+]
