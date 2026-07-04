@@ -30,7 +30,12 @@ def select_due_users(session: Session, now: datetime) -> list[User]:
         if not list_interests(session, user):
             continue
         preference = get_delivery_preference(session, user)
-        if _is_due(preference, now):
+        try:
+            is_due = _is_due(preference, now)
+        except Exception:
+            logger.exception("Failed to evaluate due status for user %s; skipping", user.id)
+            continue
+        if is_due:
             due.append(user)
     return due
 

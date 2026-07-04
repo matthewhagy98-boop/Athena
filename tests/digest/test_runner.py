@@ -8,7 +8,7 @@ from sqlalchemy import select
 from digest.compose import ComposeError
 from digest.delivery import ConsoleSender, EmailSendOutcome
 from digest.models import DigestFrequency, DigestRunStatus, EmailSendResult
-from digest.profiles import add_interest, create_user
+from digest.profiles import add_interest, create_user, update_delivery_preference
 from digest.runner import _is_due, process_user_digest, select_due_users
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Topic
 from evidence_engine.topics.mesh import MeshResolution
@@ -87,6 +87,26 @@ def test_select_due_users_excludes_paused_users(db_session):
     assert [u.email for u in due] == ["active@example.com"]
 
 
+def test_select_due_users_skips_user_with_unsupported_frequency_but_still_returns_others(db_session):
+    invalid_user = create_user(db_session, "invalid_frequency@example.com")
+    weekly_user = create_user(db_session, "weekly@example.com")
+
+    with patch(
+        "evidence_engine.topics.registry.resolve_to_mesh",
+        return_value=MeshResolution(mesh_id="D000012", canonical_label="Some Shared Topic"),
+    ):
+        add_interest(db_session, invalid_user, "some shared topic")
+        add_interest(db_session, weekly_user, "some shared topic")
+
+    invalid_preference = update_delivery_preference(db_session, invalid_user, frequency=DigestFrequency.DAILY)
+    invalid_preference.last_digest_sent_at = datetime(2026, 6, 1)
+    db_session.flush()
+
+    due = select_due_users(db_session, datetime(2026, 7, 6))
+
+    assert [u.email for u in due] == ["weekly@example.com"]
+
+
 @respx.mock
 def test_process_user_digest_marks_skipped_and_advances_watermark_when_no_changes(db_session):
     user = create_user(db_session, "quiet@example.com")
@@ -149,8 +169,11 @@ def test_process_user_digest_marks_failed_and_does_not_advance_watermark_on_comp
 
     assert run.status == DigestRunStatus.FAILED
     assert sender.sent == []
+    from digest.models import DigestEmail
     from digest.profiles import get_delivery_preference
 
+    persisted_email = db_session.execute(select(DigestEmail).where(DigestEmail.digest_run_id == run.id)).scalar_one_or_none()
+    assert persisted_email is None
     assert get_delivery_preference(db_session, user).last_digest_sent_at is None
 
 
