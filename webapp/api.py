@@ -3,11 +3,12 @@ from collections.abc import Generator
 from datetime import date, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from digest.models import User
 from digest.profiles import create_anonymous_user
-from evidence_engine.db.models import EvidenceTier, StudyType, Topic
+from evidence_engine.db.models import EvidenceTier, PaperTopic, StudyType, Topic
 from evidence_engine.db.session import SessionLocal
 
 from webapp.compare import compare_papers, compare_topics
@@ -30,10 +31,37 @@ def get_db() -> Generator[Session, None, None]:
         session.close()
 
 
-def _paper_out(row) -> dict:
+def _topics_by_paper(db: Session, paper_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[dict]]:
+    if not paper_ids:
+        return {}
+    rows = db.execute(
+        select(PaperTopic.paper_id, Topic.id, Topic.canonical_label)
+        .join(Topic, Topic.id == PaperTopic.topic_id)
+        .where(PaperTopic.paper_id.in_(paper_ids))
+        .order_by(Topic.canonical_label)
+    ).all()
+    out: dict[uuid.UUID, list[dict]] = {}
+    for paper_id, topic_id, label in rows:
+        out.setdefault(paper_id, []).append({"id": str(topic_id), "canonical_label": label})
+    return out
+
+
+def _paper_out(row, topics_by_paper: dict) -> dict:
     return {
-        "paper": {"id": str(row.paper.id), "title": row.paper.title, "pub_date": row.paper.pub_date.isoformat() if row.paper.pub_date else None},
-        "score": {"evidence_tier": row.score.evidence_tier.value, "final_score": row.score.final_score} if row.score else None,
+        "paper": {
+            "id": str(row.paper.id),
+            "title": row.paper.title,
+            "abstract": row.paper.abstract,
+            "pub_date": row.paper.pub_date.isoformat() if row.paper.pub_date else None,
+        },
+        "score": {
+            "evidence_tier": row.score.evidence_tier.value,
+            "study_type": row.score.study_type.value,
+            "final_score": row.score.final_score,
+        }
+        if row.score
+        else None,
+        "topics": topics_by_paper.get(row.paper.id, []),
     }
 
 
@@ -59,8 +87,9 @@ def search_endpoint(
         include_retracted=include_retracted,
     )
     result = search_papers(db, query=q, filters=filters, page=page, page_size=page_size)
+    topics_map = _topics_by_paper(db, [row.paper.id for row in result.rows])
     return {
-        "rows": [_paper_out(row) for row in result.rows],
+        "rows": [_paper_out(row, topics_map) for row in result.rows],
         "total": result.total,
         "page": result.page,
         "page_size": result.page_size,
@@ -70,8 +99,9 @@ def search_endpoint(
 @app.get("/compare/papers")
 def compare_papers_endpoint(paper_ids: list[uuid.UUID] = Query(default_factory=list), db: Session = Depends(get_db)) -> dict:
     result = compare_papers(db, paper_ids)
+    topics_map = _topics_by_paper(db, [row.paper.id for row in result.rows])
     return {
-        "rows": [_paper_out(row) for row in result.rows],
+        "rows": [_paper_out(row, topics_map) for row in result.rows],
         "unresolved_ids": [str(pid) for pid in result.unresolved_ids],
     }
 
@@ -108,7 +138,15 @@ def create_saved_search_endpoint(payload: dict, db: Session = Depends(get_db)) -
 @app.get("/saved-searches")
 def list_saved_searches_endpoint(user_id: uuid.UUID, db: Session = Depends(get_db)) -> list[dict]:
     user = _require_user(db, user_id)
-    return [{"id": str(s.id), "name": s.name, "query_params": s.query_params} for s in list_saved_searches(db, user)]
+    return [
+        {
+            "id": str(s.id),
+            "name": s.name,
+            "query_params": s.query_params,
+            "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+        }
+        for s in list_saved_searches(db, user)
+    ]
 
 
 @app.delete("/saved-searches/{saved_search_id}", status_code=204)
@@ -127,8 +165,9 @@ def run_saved_search_endpoint(saved_search_id: uuid.UUID, user_id: uuid.UUID, db
         page = run_saved_search(db, user, saved_search_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    topics_map = _topics_by_paper(db, [row.paper.id for row in page.rows])
     return {
-        "rows": [_paper_out(row) for row in page.rows],
+        "rows": [_paper_out(row, topics_map) for row in page.rows],
         "total": page.total,
         "page": page.page,
         "page_size": page.page_size,
@@ -139,6 +178,12 @@ def run_saved_search_endpoint(saved_search_id: uuid.UUID, user_id: uuid.UUID, db
 def create_anonymous_user_endpoint(db: Session = Depends(get_db)) -> dict:
     user = create_anonymous_user(db)
     return {"user_id": str(user.id)}
+
+
+@app.get("/topics")
+def list_topics_endpoint(db: Session = Depends(get_db)) -> list[dict]:
+    topics = db.execute(select(Topic).order_by(Topic.canonical_label)).scalars().all()
+    return [{"id": str(t.id), "canonical_label": t.canonical_label} for t in topics]
 
 
 @app.get("/topics/{topic_id}/tier-distribution")
