@@ -177,12 +177,13 @@ def test_sync_search_index_isolates_per_paper_failure_and_still_advances_waterma
 
     from webapp.search_index import _reindex_paper as real_reindex
 
-    def flaky_reindex(session, paper_id):
+    def flaky_reindex_wrapper(session, paper_id):
+        # For the bad paper, call real_reindex but then fail after it does its work
+        real_reindex(session, paper_id)
         if paper_id == bad_paper.id:
             raise RuntimeError("boom")
-        return real_reindex(session, paper_id)
 
-    with patch("webapp.search_index._reindex_paper", side_effect=flaky_reindex):
+    with patch("webapp.search_index._reindex_paper", side_effect=flaky_reindex_wrapper):
         sync_search_index(db_session)
 
     assert (
