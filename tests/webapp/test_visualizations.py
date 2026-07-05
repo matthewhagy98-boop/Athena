@@ -2,7 +2,6 @@ from datetime import datetime
 
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score, Topic
 from webapp.visualizations import change_timeline, tier_distribution
-import uuid
 
 
 def test_tier_distribution_counts_papers_by_tier(db_session):
