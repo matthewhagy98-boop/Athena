@@ -47,6 +47,7 @@ Data flow is read-mostly against the existing API, plus the one new write path:
 
 - **New write path:** `POST /users/anonymous` → `digest.profiles.create_anonymous_user(session) -> User` → new `digest.models.User` row with a generated placeholder email.
 - **Existing read/write paths:** unchanged, consumed via React Query hooks that wrap the routes listed in the web-search-ui spec's section 6 (`/search`, `/compare/papers`, `/compare/topics`, `/saved-searches` CRUD + `/run`, `/topics/{id}/tier-distribution`, `/topics/{id}/timeline`).
+- **Two small read-only API additions** (decided with the user during plan-writing, 2026-07-05): a `GET /topics` endpoint returning `[{id, canonical_label}]` to populate the filter sidebar's topic dropdown, and per-paper `topics: [{id, canonical_label}]` included in search/compare paper rows so result cards can link to Topic Detail. Neither touches service logic or schemas — both are serialization/query additions in `webapp/api.py`.
 
 ### New backend endpoint: anonymous user creation
 
@@ -101,5 +102,5 @@ Each page's data need is a single React Query hook wrapping one API call (e.g. `
 - Bookmarks, alerts, sharing/workspaces, audit log (sub-project E).
 - The Interactive Evidence Suite (regression/raw-data views) (sub-project F).
 - Real user authentication (anonymous `localStorage` identity only; real auth is a separate backlog item).
-- Any modification to `webapp/`'s existing search/compare/saved-search/visualization service logic — this sub-project is a pure frontend consumer of that API plus the one new anonymous-user endpoint.
+- Any modification to `webapp/`'s existing search/compare/saved-search/visualization **service logic** — this sub-project consumes that API as-is, plus three small additions to `webapp/api.py` only: the anonymous-user endpoint, `GET /topics`, and per-paper topics in search/compare serialization.
 - Semantic/vector search, numeric threshold filters, cross-topic trending — already out of scope per the underlying web-search-ui spec and unchanged here.
