@@ -1,11 +1,11 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score
+from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, PaperTopic, Score
 
 
 @dataclass
@@ -36,7 +36,7 @@ def tier_distribution(session: Session, topic_id: uuid.UUID) -> TierDistribution
 
 @dataclass
 class TimelineBucket:
-    bucket_date: "datetime.date"
+    bucket_date: date
     event_type: ChangeEventType
     count: int
 
