@@ -5,6 +5,7 @@ import pytest
 from digest.models import DigestFrequency
 from digest.profiles import (
     add_interest,
+    create_anonymous_user,
     create_user,
     get_delivery_preference,
     list_interests,
@@ -69,3 +70,29 @@ def test_update_delivery_preference_changes_frequency_and_send_day(db_session):
 
     assert updated.send_day == 4
     assert updated.frequency == DigestFrequency.WEEKLY
+
+
+def test_create_anonymous_user_generates_placeholder_email(db_session):
+    user = create_anonymous_user(db_session)
+    assert user.id is not None
+    assert user.email.startswith("anon-")
+    assert user.email.endswith("@no-reply.local")
+
+
+def test_create_anonymous_user_emails_are_unique(db_session):
+    a = create_anonymous_user(db_session)
+    b = create_anonymous_user(db_session)
+    assert a.email != b.email
+
+
+def test_create_anonymous_user_does_not_enroll_in_digest_delivery(db_session):
+    from sqlalchemy import select
+    from digest.models import DeliveryPreference, InterestProfile
+
+    user = create_anonymous_user(db_session)
+    assert db_session.execute(
+        select(DeliveryPreference).where(DeliveryPreference.user_id == user.id)
+    ).scalar_one_or_none() is None
+    assert db_session.execute(
+        select(InterestProfile).where(InterestProfile.user_id == user.id)
+    ).scalar_one_or_none() is None

@@ -164,3 +164,15 @@ def test_timeline_endpoint(db_session):
 
     assert response.status_code == 200
     assert response.json()[0]["count"] == 1
+
+
+def test_create_anonymous_user_endpoint(db_session):
+    client = _client(db_session)
+    response = client.post("/users/anonymous")
+    assert response.status_code == 201
+    user_id = uuid.UUID(response.json()["user_id"])
+
+    from digest.models import User
+    user = db_session.get(User, user_id)
+    assert user is not None
+    assert user.email.endswith("@no-reply.local")

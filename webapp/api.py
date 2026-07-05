@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from digest.models import User
+from digest.profiles import create_anonymous_user
 from evidence_engine.db.models import EvidenceTier, StudyType, Topic
 from evidence_engine.db.session import SessionLocal
 
@@ -132,6 +133,12 @@ def run_saved_search_endpoint(saved_search_id: uuid.UUID, user_id: uuid.UUID, db
         "page": page.page,
         "page_size": page.page_size,
     }
+
+
+@app.post("/users/anonymous", status_code=201)
+def create_anonymous_user_endpoint(db: Session = Depends(get_db)) -> dict:
+    user = create_anonymous_user(db)
+    return {"user_id": str(user.id)}
 
 
 @app.get("/topics/{topic_id}/tier-distribution")
