@@ -26,6 +26,8 @@ def authenticate_api_key(session: Session, authorization_header: str | None) -> 
     if api_key is None:
         raise AuthenticationError("Invalid or revoked API key")
 
+    # api_key.organization_id is a non-nullable FK to organizations.id, and nothing in this
+    # package ever deletes an Organization, so this lookup cannot return None in practice.
     organization = session.get(Organization, api_key.organization_id)
     if organization.status == "suspended":
         raise OrganizationSuspendedError(f"Organization {organization.id} is suspended")
