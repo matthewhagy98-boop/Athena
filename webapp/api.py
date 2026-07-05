@@ -67,7 +67,7 @@ def search_endpoint(
 
 
 @app.get("/compare/papers")
-def compare_papers_endpoint(paper_ids: list[uuid.UUID] = Query(...), db: Session = Depends(get_db)) -> dict:
+def compare_papers_endpoint(paper_ids: list[uuid.UUID] = Query(default_factory=list), db: Session = Depends(get_db)) -> dict:
     result = compare_papers(db, paper_ids)
     return {
         "rows": [_paper_out(row) for row in result.rows],
@@ -76,7 +76,7 @@ def compare_papers_endpoint(paper_ids: list[uuid.UUID] = Query(...), db: Session
 
 
 @app.get("/compare/topics")
-def compare_topics_endpoint(topic_ids: list[uuid.UUID] = Query(...), db: Session = Depends(get_db)) -> dict:
+def compare_topics_endpoint(topic_ids: list[uuid.UUID] = Query(default_factory=list), db: Session = Depends(get_db)) -> dict:
     result = compare_topics(db, topic_ids)
     return {
         "rows": [

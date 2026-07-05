@@ -80,6 +80,26 @@ def test_compare_topics_endpoint_returns_partial_results(db_session):
     assert body["unresolved_ids"] == [str(missing_id)]
 
 
+def test_compare_papers_endpoint_handles_empty_input(db_session):
+    client = _client(db_session)
+    response = client.get("/compare/papers")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rows"] == []
+    assert body["unresolved_ids"] == []
+
+
+def test_compare_topics_endpoint_handles_empty_input(db_session):
+    client = _client(db_session)
+    response = client.get("/compare/topics")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rows"] == []
+    assert body["unresolved_ids"] == []
+
+
 def test_saved_search_crud_and_run_lifecycle(db_session):
     user = create_user(db_session, "api_user@example.com")
     topic = Topic(canonical_label="Saved Search Topic", mesh_id="D000003")
