@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from scripts.provision_organization import main
 
@@ -35,7 +35,7 @@ def test_main_accepts_custom_rate_limit_flag(db_session, capsys):
 
 
 def test_main_rolls_back_and_reraises_on_failure(db_session):
-    db_session.rollback = lambda: None
+    db_session.rollback = MagicMock()
     db_session.close = lambda: None
 
     with (
@@ -48,3 +48,5 @@ def test_main_rolls_back_and_reraises_on_failure(db_session):
             assert False, "expected RuntimeError"
         except RuntimeError:
             pass
+
+    db_session.rollback.assert_called_once()
