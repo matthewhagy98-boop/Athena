@@ -61,9 +61,9 @@ def search_papers(
         tsquery = func.plainto_tsquery("english", query)
         stmt = stmt.where(PaperSearchIndex.search_vector.op("@@")(tsquery))
         rank_column = func.ts_rank(PaperSearchIndex.search_vector, tsquery)
-        stmt = stmt.order_by(rank_column.desc())
+        stmt = stmt.order_by(rank_column.desc(), PaperSearchIndex.id)
     else:
-        stmt = stmt.order_by(PaperSearchIndex.publication_date.desc().nulls_last())
+        stmt = stmt.order_by(PaperSearchIndex.publication_date.desc().nulls_last(), PaperSearchIndex.id)
 
     total = session.execute(
         select(func.count()).select_from(stmt.with_only_columns(PaperSearchIndex.id).subquery())

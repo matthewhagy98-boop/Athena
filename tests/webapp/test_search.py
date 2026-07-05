@@ -122,3 +122,67 @@ def test_search_papers_paginates_results(db_session):
     assert len(page1.rows) == 2
     assert len(page2.rows) == 2
     assert {r.paper.id for r in page1.rows}.isdisjoint({r.paper.id for r in page2.rows})
+
+
+def test_search_papers_deterministic_pagination_with_tied_publication_dates(db_session):
+    """Test that pagination is deterministic and non-overlapping even when papers have tied sort keys.
+
+    This test seeds multiple papers with the SAME publication_date to expose any nondeterminism
+    from missing tiebreaker sort keys. It verifies:
+    1. No duplicate rows across pages (no rows appearing on multiple pages)
+    2. No gaps in pagination (all rows returned exactly once across all pages)
+    3. Identical ordering on repeated queries (determinism)
+    """
+    topic = Topic(canonical_label="Tied Dates Topic", mesh_id="D000005")
+    db_session.add(topic)
+    db_session.flush()
+
+    # Seed 6 papers all with the SAME publication date (tied primary sort key)
+    tied_date = date(2026, 5, 15)
+    paper_ids = []
+    for i in range(6):
+        paper = _seed_paper(
+            db_session, topic, f"Paper {i}", "abstract", tied_date, EvidenceTier.ESTABLISHED, StudyType.RCT
+        )
+        paper_ids.append(paper.id)
+    sync_search_index(db_session)
+
+    # Query all pages with page_size=2 to force pagination
+    page1 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=1, page_size=2)
+    page2 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=2, page_size=2)
+    page3 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=3, page_size=2)
+
+    # Collect all rows across pages
+    all_rows_first_query = page1.rows + page2.rows + page3.rows
+    all_ids_first_query = [r.paper.id for r in all_rows_first_query]
+
+    # Verify no duplicates (each row appears at most once across all pages)
+    assert len(all_ids_first_query) == len(set(all_ids_first_query)), "Found duplicate rows across pages"
+
+    # Verify no gaps (all seeded paper IDs are present exactly once)
+    assert set(all_ids_first_query) == set(paper_ids), "Missing rows or extra rows in pagination"
+
+    # Verify total count is correct
+    assert page1.total == 6
+    assert len(page1.rows) == 2
+    assert len(page2.rows) == 2
+    assert len(page3.rows) == 2
+
+    # Verify pages are disjoint (no paper appears on multiple pages)
+    page1_ids = {r.paper.id for r in page1.rows}
+    page2_ids = {r.paper.id for r in page2.rows}
+    page3_ids = {r.paper.id for r in page3.rows}
+    assert page1_ids.isdisjoint(page2_ids)
+    assert page2_ids.isdisjoint(page3_ids)
+    assert page1_ids.isdisjoint(page3_ids)
+
+    # Verify determinism: run the same query again and get identical ordering
+    page1_repeat = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=1, page_size=2)
+    page2_repeat = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=2, page_size=2)
+    page3_repeat = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=3, page_size=2)
+
+    all_rows_second_query = page1_repeat.rows + page2_repeat.rows + page3_repeat.rows
+    all_ids_second_query = [r.paper.id for r in all_rows_second_query]
+
+    # Verify the ordering is identical across two independent queries
+    assert all_ids_first_query == all_ids_second_query, "Ordering is nondeterministic between repeated queries"
