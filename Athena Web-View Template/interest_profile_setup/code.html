@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Interest Profile | Research Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:opsz,wght@8..60,400;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-container": "#86f2e4",
+                    "on-secondary-container": "#006f66",
+                    "primary-fixed": "#dae2fd",
+                    "surface-container-low": "#f2f4f6",
+                    "surface-dim": "#d8dadc",
+                    "tertiary-container": "#0b1c30",
+                    "background": "#f7f9fb",
+                    "secondary": "#006a61",
+                    "error-container": "#ffdad6",
+                    "surface-bright": "#f7f9fb",
+                    "outline": "#76777d",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "on-primary-fixed": "#131b2e",
+                    "primary-fixed-dim": "#bec6e0",
+                    "error": "#ba1a1a",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "tertiary-fixed": "#d3e4fe",
+                    "primary": "#000000",
+                    "on-tertiary": "#ffffff",
+                    "on-background": "#191c1e",
+                    "on-error-container": "#93000a",
+                    "inverse-on-surface": "#eff1f3",
+                    "surface-container-highest": "#e0e3e5",
+                    "surface-tint": "#565e74",
+                    "on-secondary-fixed": "#00201d",
+                    "surface-variant": "#e0e3e5",
+                    "inverse-primary": "#bec6e0",
+                    "inverse-surface": "#2d3133",
+                    "on-tertiary-container": "#75859d",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "surface-container": "#eceef0",
+                    "on-surface-variant": "#45464d",
+                    "on-primary-container": "#7c839b",
+                    "on-secondary": "#ffffff",
+                    "surface": "#f7f9fb",
+                    "surface-container-high": "#e6e8ea",
+                    "on-secondary-fixed-variant": "#005049",
+                    "secondary-fixed-dim": "#6bd8cb",
+                    "on-error": "#ffffff",
+                    "outline-variant": "#c6c6cd",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#191c1e",
+                    "secondary-fixed": "#89f5e7",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-container": "#131b2e"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "unit": "4px",
+                    "margin-desktop": "48px",
+                    "margin-mobile": "16px",
+                    "max-width-content": "1200px"
+            },
+            "fontFamily": {
+                    "body-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "headline-xl": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-lg": ["\"Source Serif 4\""],
+                    "headline-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "body-md": ["\"Source Serif 4\""]
+            },
+            "fontSize": {
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .scrolling-content::-webkit-scrollbar {
+            width: 4px;
+        }
+        .scrolling-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .scrolling-content::-webkit-scrollbar-thumb {
+            background: #e2e8e0;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen">
+<!-- SideNavBar Anchor -->
+<aside class="bg-tertiary-container text-secondary-fixed font-label-md text-label-md h-screen w-64 fixed left-0 top-0 flex flex-col h-full py-8 px-4 z-50">
+<div class="mb-8 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed">Research Intelligence</h1>
+<p class="text-on-tertiary-fixed-variant text-label-sm mt-1">Academic Authority</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Dashboard -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Search -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">search</span>
+<span>Search</span>
+</a>
+<!-- Interests - ACTIVE -->
+<a class="flex items-center gap-3 px-3 py-2 bg-secondary text-on-secondary rounded-lg duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">interests</span>
+<span>Interests</span>
+</a>
+<!-- Comparisons -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">compare_arrows</span>
+<span>Comparisons</span>
+</a>
+<!-- Saved Searches -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">save</span>
+<span>Saved Searches</span>
+</a>
+<!-- Bookmarks -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined">bookmarks</span>
+<span>Bookmarks</span>
+</a>
+</nav>
+<div class="mt-auto pt-8 border-t border-on-tertiary-fixed-variant/20 flex items-center gap-3 px-2">
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed">
+<span class="material-symbols-outlined">account_circle</span>
+</div>
+<div class="flex-1 overflow-hidden">
+<p class="text-on-tertiary-fixed font-bold truncate">Dr. Aris Thorne</p>
+<p class="text-on-tertiary-fixed-variant text-xs truncate">Research Lead</p>
+</div>
+</div>
+</aside>
+<!-- TopNavBar Anchor -->
+<header class="bg-surface text-primary font-body-sm text-body-sm flex justify-between items-center h-16 px-gutter ml-64 w-[calc(100%-16rem)] border-b border-outline-variant sticky top-0 z-40">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md focus-within:ring-2 focus-within:ring-secondary rounded-lg transition-all">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 focus:ring-0 text-body-sm" placeholder="Search knowledge base..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors"><span class="material-symbols-outlined">help_outline</span></button>
+<button class="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined">account_circle</span>
+<span class="font-medium">Profile</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 p-margin-desktop min-h-[calc(100vh-4rem)]">
+<div class="max-w-[1200px] mx-auto">
+<header class="mb-12">
+<h2 class="font-headline-lg text-headline-lg text-primary tracking-tight">Interest Profile</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 max-w-2xl">Refine your intellectual focus. Your choices here calibrate our AI models to prioritize the findings, citations, and summaries most relevant to your specific research mandate.</p>
+</header>
+<div class="grid grid-cols-12 gap-8">
+<!-- Form Column -->
+<div class="col-span-12 lg:col-span-7 space-y-10">
+<!-- Domain Selection -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-secondary">science</span>
+<h3 class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Scientific Domains</h3>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+<!-- Category Chips -->
+<button class="flex items-center justify-between px-4 py-3 border border-secondary bg-secondary/5 rounded-lg text-secondary font-medium transition-all group">
+<span class="text-sm">Molecular Biology</span>
+<span class="material-symbols-outlined text-sm">check_circle</span>
+</button>
+<button class="flex items-center justify-between px-4 py-3 border border-outline-variant hover:border-secondary/50 rounded-lg text-on-surface-variant hover:text-secondary transition-all group">
+<span class="text-sm">Neuroscience</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-50">add</span>
+</button>
+<button class="flex items-center justify-between px-4 py-3 border border-secondary bg-secondary/5 rounded-lg text-secondary font-medium transition-all group">
+<span class="text-sm">Epidemiology</span>
+<span class="material-symbols-outlined text-sm">check_circle</span>
+</button>
+<button class="flex items-center justify-between px-4 py-3 border border-outline-variant hover:border-secondary/50 rounded-lg text-on-surface-variant hover:text-secondary transition-all group">
+<span class="text-sm">Immunology</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-50">add</span>
+</button>
+<button class="flex items-center justify-between px-4 py-3 border border-outline-variant hover:border-secondary/50 rounded-lg text-on-surface-variant hover:text-secondary transition-all group">
+<span class="text-sm">Genomics</span>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-50">add</span>
+</button>
+<button class="flex items-center justify-between px-4 py-3 border border-secondary bg-secondary/5 rounded-lg text-secondary font-medium transition-all group">
+<span class="text-sm">Bioinformatics</span>
+<span class="material-symbols-outlined text-sm">check_circle</span>
+</button>
+</div>
+</section>
+<!-- Keyword Tracking -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-secondary">label</span>
+<h3 class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Specific Keywords</h3>
+</div>
+<p class="text-body-sm text-on-surface-variant mb-6">Enter technical terms or entities you are tracking across global publications.</p>
+<div class="flex flex-wrap gap-2 mb-4">
+<span class="inline-flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded text-sm font-medium">
+                                CRISPR-Cas9 <button class="hover:text-error transition-colors"><span class="material-symbols-outlined text-sm">close</span></button>
+</span>
+<span class="inline-flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded text-sm font-medium">
+                                mRNA Vaccines <button class="hover:text-error transition-colors"><span class="material-symbols-outlined text-sm">close</span></button>
+</span>
+<span class="inline-flex items-center gap-2 bg-surface-container-high px-3 py-1.5 rounded text-sm font-medium">
+                                Proteomics <button class="hover:text-error transition-colors"><span class="material-symbols-outlined text-sm">close</span></button>
+</span>
+</div>
+<div class="relative">
+<input class="w-full bg-white border border-outline-variant rounded-lg px-4 py-3 focus:border-secondary focus:ring-1 focus:ring-secondary outline-none text-body-sm transition-all" placeholder="Add keyword (e.g. Protein Folding, GWA Studies)..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 bg-tertiary text-on-tertiary px-4 py-1.5 rounded text-xs font-bold hover:bg-tertiary/90 transition-all">ADD</button>
+</div>
+</section>
+<!-- Notification Preferences -->
+<section class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6">
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-secondary">notifications_active</span>
+<h3 class="font-label-md text-label-md uppercase tracking-wider text-on-surface">Intelligence Delivery</h3>
+</div>
+<div class="space-y-4">
+<label class="flex items-center justify-between p-4 border border-outline-variant rounded-lg cursor-pointer hover:bg-surface-container-low transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-secondary/10 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined">alternate_email</span>
+</div>
+<div>
+<p class="font-bold text-on-surface">Weekly Intelligence Email</p>
+<p class="text-xs text-on-surface-variant">A curated 'Weekly Blurb' sent every Monday at 08:00 AM.</p>
+</div>
+</div>
+<input checked="" class="w-5 h-5 rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox"/>
+</label>
+<label class="flex items-center justify-between p-4 border border-outline-variant rounded-lg cursor-pointer hover:bg-surface-container-low transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-secondary/10 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined">bolt</span>
+</div>
+<div>
+<p class="font-bold text-on-surface">Real-time In-app Alerts</p>
+<p class="text-xs text-on-surface-variant">Immediate notifications for high-confidence matches in tracked keywords.</p>
+</div>
+</div>
+<input class="w-5 h-5 rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox"/>
+</label>
+</div>
+</section>
+<div class="flex justify-end pt-4">
+<button class="bg-primary text-on-primary px-10 py-3 font-bold rounded-lg hover:bg-opacity-90 shadow-sm active:scale-95 transition-all">
+                            Save Interest Profile
+                        </button>
+</div>
+</div>
+<!-- Preview Column -->
+<div class="col-span-12 lg:col-span-5">
+<div class="sticky top-24">
+<div class="bg-tertiary text-on-tertiary rounded-lg p-1 mb-4 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm">visibility</span>
+<span class="text-[10px] font-bold uppercase tracking-widest">Dynamic Preview</span>
+</div>
+<!-- Weekly Blurb Preview -->
+<article class="bg-white border border-outline-variant rounded-lg shadow-sm overflow-hidden flex flex-col h-[500px]">
+<div class="p-6 border-b border-outline-variant bg-surface-container-lowest">
+<div class="flex justify-between items-start mb-4">
+<div>
+<span class="text-[10px] font-bold text-secondary uppercase tracking-widest block mb-1">Issue #142</span>
+<h4 class="font-headline-md text-headline-md leading-tight text-primary">The Weekly Blurb</h4>
+</div>
+<div class="text-right">
+<p class="text-xs font-medium text-on-surface-variant">Oct 16, 2023</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border-2 border-white bg-secondary-container"></div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-primary-fixed"></div>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-surface-dim"></div>
+</div>
+<span class="text-xs text-on-surface-variant">Personalized for Molecular Biology &amp; Bioinformatics</span>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto p-6 scrolling-content space-y-6">
+<div>
+<h5 class="text-xs font-bold text-secondary uppercase tracking-widest mb-3">Executive Summary</h5>
+<p class="font-body-md text-body-md text-on-surface leading-relaxed">
+                                        This week, significant breakthroughs in <span class="bg-secondary-container/30 px-1 border-b border-secondary">CRISPR-Cas9</span> efficiency have been reported across three major journals. Notably, the introduction of non-viral delivery mechanisms is showing a 40% reduction in off-target effects.
+                                    </p>
+</div>
+<div>
+<h5 class="text-xs font-bold text-secondary uppercase tracking-widest mb-3">Key Findings</h5>
+<ul class="space-y-4">
+<li class="flex gap-3">
+<div class="flex-shrink-0 w-8 h-8 rounded bg-surface-container-high flex items-center justify-center font-bold text-secondary text-sm">01</div>
+<div>
+<p class="text-sm font-bold text-on-surface hover:text-secondary cursor-pointer transition-colors">Neural mapping through high-resolution proteomics</p>
+<p class="text-xs text-on-surface-variant mt-1">Nature Communications • Impact: 12.4</p>
+</div>
+</li>
+<li class="flex gap-3">
+<div class="flex-shrink-0 w-8 h-8 rounded bg-surface-container-high flex items-center justify-center font-bold text-secondary text-sm">02</div>
+<div>
+<p class="text-sm font-bold text-on-surface hover:text-secondary cursor-pointer transition-colors">Novel mRNA delivery vectors for pancreatic oncology</p>
+<p class="text-xs text-on-surface-variant mt-1">Cell Reports • Impact: 9.8</p>
+</div>
+</li>
+</ul>
+</div>
+<div class="bg-secondary/5 rounded p-4 border border-secondary/20">
+<h5 class="text-[10px] font-bold text-secondary uppercase tracking-widest mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">auto_awesome</span> AI Recommendation
+                                    </h5>
+<p class="text-xs text-secondary leading-normal">
+                                        Based on your interest in <strong>Bioinformatics</strong>, we've identified a rising trend in stochastic modeling for population genomics. Would you like to add this to your tracking list?
+                                    </p>
+</div>
+</div>
+<div class="p-4 bg-surface-container border-t border-outline-variant flex justify-between items-center">
+<div class="flex gap-1">
+<div class="h-1 w-8 bg-secondary rounded-full"></div>
+<div class="h-1 w-2 bg-outline-variant rounded-full"></div>
+<div class="h-1 w-2 bg-outline-variant rounded-full"></div>
+</div>
+<button class="text-xs font-bold text-primary flex items-center gap-1 hover:gap-2 transition-all">
+                                    FULL REPORT <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</article>
+<!-- Visual Decorative element -->
+<div class="mt-8 opacity-20 group">
+<div class="w-full h-32 rounded-lg relative overflow-hidden bg-tertiary-container">
+<div class="w-full h-full bg-cover bg-center mix-blend-overlay" data-alt="A macro photography shot of crystalline molecular structures forming a dense, complex lattice. The lighting is cold, surgical, and cinematic, with deep navy shadows and sharp highlights on the edges of the crystals. The aesthetic is clean and professional, representing scientific data visualization and structural biology." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBmDAHLx7kIm1jdJgqGkLClUwriFJru5XNf-tcB5gXzRjB4NnHVqsfWXw4OQOiB3OTFYAfd4YgiTTTvOQttQwr-UcaEeHmVF-BTsZZceNzPdbqPNJ_skyzRaBrinAyw4z5BgXMpkDne06p_UtzmHlXvEk_r9klkq56ReOqKgNj2fJz76_3dynzlXoZ8BxJV4MswY5wIByN-YnIoVVx7kOihlfYDj6zvGeSaMNEN1ou3dMbbB5mJLdqTxw')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-tertiary-container to-transparent"></div>
+</div>
+<p class="text-center text-[10px] font-mono mt-2 tracking-widest text-on-surface-variant">SYSTEM CALIBRATION ACTIVE</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Micro-interaction Script -->
+<script>
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if(this.classList.contains('active:scale-90')) return;
+                this.classList.add('scale-95');
+                setTimeout(() => this.classList.remove('scale-95'), 100);
+            });
+        });
+
+        // Simple domain toggle simulation
+        document.querySelectorAll('button.group').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const icon = this.querySelector('.material-symbols-outlined');
+                if (icon.innerText === 'add') {
+                    icon.innerText = 'check_circle';
+                    icon.classList.remove('opacity-0', 'group-hover:opacity-50');
+                    this.classList.add('bg-secondary/5', 'text-secondary', 'border-secondary');
+                    this.classList.remove('text-on-surface-variant', 'border-outline-variant');
+                } else if (icon.innerText === 'check_circle') {
+                    icon.innerText = 'add';
+                    icon.classList.add('opacity-0', 'group-hover:opacity-50');
+                    this.classList.remove('bg-secondary/5', 'text-secondary', 'border-secondary');
+                    this.classList.add('text-on-surface-variant', 'border-outline-variant');
+                }
+            });
+        });
+    </script>
+</body></html>

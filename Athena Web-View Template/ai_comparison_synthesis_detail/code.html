@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Comparison Synthesis | Research Intelligence</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:opsz,wght@8..60,400;600&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-surface": "#191c1e",
+                    "surface-variant": "#e0e3e5",
+                    "inverse-on-surface": "#eff1f3",
+                    "surface-container": "#eceef0",
+                    "tertiary-container": "#0b1c30",
+                    "primary-container": "#131b2e",
+                    "primary": "#000000",
+                    "surface-dim": "#d8dadc",
+                    "outline-variant": "#c6c6cd",
+                    "tertiary-fixed": "#d3e4fe",
+                    "surface-container-highest": "#e0e3e5",
+                    "error-container": "#ffdad6",
+                    "primary-fixed": "#dae2fd",
+                    "surface-container-lowest": "#ffffff",
+                    "outline": "#76777d",
+                    "on-secondary-fixed-variant": "#005049",
+                    "surface-container-low": "#f2f4f6",
+                    "secondary-container": "#86f2e4",
+                    "on-secondary-container": "#006f66",
+                    "on-error-container": "#93000a",
+                    "surface-tint": "#565e74",
+                    "on-primary-container": "#7c839b",
+                    "on-primary-fixed": "#131b2e",
+                    "on-primary": "#ffffff",
+                    "surface-bright": "#f7f9fb",
+                    "secondary-fixed": "#89f5e7",
+                    "on-background": "#191c1e",
+                    "inverse-primary": "#bec6e0",
+                    "secondary-fixed-dim": "#6bd8cb",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "on-tertiary": "#ffffff",
+                    "on-surface-variant": "#45464d",
+                    "on-error": "#ffffff",
+                    "surface": "#f7f9fb",
+                    "on-secondary-fixed": "#00201d",
+                    "background": "#f7f9fb",
+                    "on-secondary": "#ffffff",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "inverse-surface": "#2d3133",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "primary-fixed-dim": "#bec6e0",
+                    "error": "#ba1a1a",
+                    "surface-container-high": "#e6e8ea",
+                    "secondary": "#006a61",
+                    "on-tertiary-container": "#75859d"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "margin-mobile": "16px",
+                    "unit": "4px",
+                    "max-width-content": "1200px",
+                    "margin-desktop": "48px"
+            },
+            "fontFamily": {
+                    "headline-lg": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-xl": ["Inter"],
+                    "body-lg": ["\"Source Serif 4\""],
+                    "label-sm": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-md": ["\"Source Serif 4\""],
+                    "headline-md": ["Inter"]
+            },
+            "fontSize": {
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}],
+                    "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface selection:bg-secondary/20">
+<!-- Sidebar Navigation -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-tertiary-container flex flex-col py-8 px-4 z-50">
+<div class="mb-8 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed leading-none">Research Intelligence</h1>
+<p class="font-label-sm text-label-sm text-on-tertiary-fixed-variant mt-1">Academic Authority</p>
+</div>
+<nav class="space-y-1 flex-1">
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed font-label-md text-label-md hover:bg-on-tertiary-container/10 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed font-label-md text-label-md hover:bg-on-tertiary-container/10 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+                Search
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed font-label-md text-label-md hover:bg-on-tertiary-container/10 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="interests">interests</span>
+                Interests
+            </a>
+<!-- ACTIVE: Comparisons -->
+<a class="flex items-center gap-3 px-3 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md transition-colors duration-200 shadow-sm" href="#">
+<span class="material-symbols-outlined" data-icon="compare_arrows">compare_arrows</span>
+                Comparisons
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed font-label-md text-label-md hover:bg-on-tertiary-container/10 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="save">save</span>
+                Saved Searches
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed font-label-md text-label-md hover:bg-on-tertiary-container/10 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks">bookmarks</span>
+                Bookmarks
+            </a>
+</nav>
+<div class="mt-auto border-t border-on-tertiary-fixed-variant/20 pt-6 px-2 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">account_circle</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm font-bold text-on-tertiary-fixed">Dr. Aris Thorne</p>
+<p class="text-[10px] text-on-tertiary-fixed-variant uppercase tracking-widest">Lead Investigator</p>
+</div>
+</div>
+</aside>
+<!-- Top AppBar -->
+<header class="ml-64 w-[calc(100%-16rem)] h-16 bg-surface flex justify-between items-center px-gutter sticky top-0 z-40 border-b border-outline-variant">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline group-focus-within:text-secondary transition-colors" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-full pl-10 pr-4 py-1.5 font-body-sm text-body-sm focus:outline-none focus:ring-2 focus:ring-secondary transition-all" placeholder="Search synthesis results..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="ml-64 p-gutter max-w-screen-xl mx-auto min-h-[calc(100vh-64px)]">
+<!-- Breadcrumbs -->
+<nav class="flex items-center gap-2 mb-6 font-label-sm text-label-sm text-on-surface-variant">
+<a class="hover:text-primary transition-colors" href="#">Comparison Analysis</a>
+<span class="material-symbols-outlined text-[14px]" data-icon="chevron_right">chevron_right</span>
+<span class="text-primary font-bold">AI Comparison Synthesis</span>
+</nav>
+<!-- Header: Synthesis Overview -->
+<section class="mb-10 flex flex-col md:flex-row justify-between items-end gap-6 bg-white p-8 border border-outline-variant rounded-xl shadow-sm">
+<div class="flex-1">
+<div class="inline-flex items-center gap-2 px-3 py-1 bg-secondary/10 text-secondary rounded-full font-label-sm text-label-sm mb-4">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                    AI SYNTHESIS ACTIVE
+                </div>
+<h1 class="font-headline-lg text-headline-lg text-primary mb-2">Neural Information Processing &amp; Cognitive Fatigue</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl italic">
+                    Reconciling Study Alpha (Neural Correlates of Cognitive Load) and Study Beta (Synaptic Fatigue and Information Density).
+                </p>
+</div>
+<div class="flex flex-col items-center p-4 border border-outline-variant rounded-lg bg-surface-container-low min-w-[200px]">
+<span class="font-label-sm text-label-sm text-outline uppercase tracking-wider mb-2">Combined Confidence</span>
+<div class="relative w-24 h-24 flex items-center justify-center">
+<svg class="w-full h-full -rotate-90">
+<circle cx="48" cy="48" fill="none" r="40" stroke="#E2E8F0" stroke-width="8"></circle>
+<circle cx="48" cy="48" fill="none" r="40" stroke="#006a61" stroke-dasharray="251.2" stroke-dashoffset="25.12" stroke-width="8"></circle>
+</svg>
+<span class="absolute font-headline-md text-headline-md text-secondary">92%</span>
+</div>
+<p class="mt-2 font-label-sm text-label-sm text-secondary font-bold uppercase">High Fidelity</p>
+</div>
+</section>
+<!-- Bento Grid for Deep Dive Content -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Conflict & Resolution Timeline (Main Action) -->
+<div class="col-span-12 lg:col-span-8 bg-white border border-outline-variant rounded-xl p-8">
+<div class="flex justify-between items-center mb-8 border-b border-surface-container pb-4">
+<h2 class="font-headline-md text-headline-md text-primary flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary" data-icon="compare">compare</span>
+                        Conflict &amp; Resolution
+                    </h2>
+<div class="flex gap-2">
+<button class="px-3 py-1 font-label-sm text-label-sm border border-outline-variant rounded hover:bg-surface-container-low transition-all">Export Logic Map</button>
+</div>
+</div>
+<div class="space-y-12 relative before:absolute before:left-[11px] before:top-4 before:bottom-4 before:w-px before:bg-outline-variant">
+<!-- Point 1: Temporal Divergence -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-white ring-4 ring-white">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+</div>
+<div class="grid grid-cols-2 gap-8">
+<div>
+<h3 class="font-label-md text-label-md text-primary mb-2">Temporal Divergence</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+                                    Study Alpha reports cognitive peak at 45 minutes of sustained load, while Study Beta observes synaptic decline beginning at the 30-minute mark.
+                                </p>
+</div>
+<div class="bg-surface-container-low border border-outline-variant/50 p-4 rounded-lg">
+<span class="font-label-sm text-label-sm text-secondary font-bold block mb-1">AI RESOLUTION</span>
+<p class="font-body-sm text-body-sm text-on-surface italic">
+                                    "Discrepancy resolved through methodological synthesis: Study Beta's invasive synaptic monitoring detects cellular precursors 15 minutes before Study Alpha's behavioral markers manifest."
+                                </p>
+</div>
+</div>
+</div>
+<!-- Point 2: Methodological Synergy -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-white ring-4 ring-white">
+<span class="material-symbols-outlined text-[14px]" data-icon="biotech">biotech</span>
+</div>
+<div class="grid grid-cols-2 gap-8">
+<div>
+<h3 class="font-label-md text-label-md text-primary mb-2">Methodological Synergy</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+                                    Study Alpha uses fMRI macro-imaging; Study Beta uses micro-electrode arrays. Data overlap is low but complementary.
+                                </p>
+</div>
+<div class="bg-surface-container-low border border-outline-variant/50 p-4 rounded-lg">
+<span class="font-label-sm text-label-sm text-secondary font-bold block mb-1">AI RESOLUTION</span>
+<p class="font-body-sm text-body-sm text-on-surface italic">
+                                    "Neural cluster activity observed in Alpha correlates with precise excitatory-inhibitory (E/I) balance shifts recorded in Beta. Result: Confirmed mechanistic chain."
+                                </p>
+</div>
+</div>
+</div>
+<!-- Point 3: Information Density Scaling -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 w-6 h-6 rounded-full bg-error flex items-center justify-center text-white ring-4 ring-white">
+<span class="material-symbols-outlined text-[14px]" data-icon="error_outline">error_outline</span>
+</div>
+<div class="grid grid-cols-2 gap-8">
+<div>
+<h3 class="font-label-md text-label-md text-error mb-2">Scaling Contradiction</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-4">
+                                    Alpha suggests linear scaling of load; Beta shows a non-linear threshold effect (cliff-edge exhaustion).
+                                </p>
+</div>
+<div class="bg-surface-container-low border border-outline-variant/50 p-4 rounded-lg">
+<span class="font-label-sm text-label-sm text-secondary font-bold block mb-1">AI RESOLUTION</span>
+<p class="font-body-sm text-body-sm text-on-surface italic">
+                                    "Non-linearity in Beta explained by metabolic exhaustion (ATP depletion). Alpha's linear model is only valid in the pre-threshold 0-30m window."
+                                </p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Unified Conclusion (Sidebar Card) -->
+<div class="col-span-12 lg:col-span-4 space-y-gutter">
+<div class="bg-primary-container text-white rounded-xl p-8 overflow-hidden relative">
+<div class="absolute top-0 right-0 p-8 opacity-10">
+<span class="material-symbols-outlined text-[120px]" data-icon="verified">verified</span>
+</div>
+<h2 class="font-headline-md text-headline-md mb-6 relative z-10">Unified Conclusion</h2>
+<div class="font-body-md text-body-md text-on-primary-container leading-relaxed space-y-4 relative z-10">
+<p>
+                            The synthesis suggests that <span class="text-white font-bold underline decoration-secondary">cognitive load is a metabolic limit</span> rather than a purely structural one.
+                        </p>
+<p>
+                            By combining Study Alpha's behavioral mapping with Study Beta's cellular tracking, we establish a new <strong>Predictive Exhaustion Model (PEM)</strong>. This model provides a 92% accurate forecast for performance degradation based on information throughput intensity.
+                        </p>
+</div>
+<div class="mt-8 pt-6 border-t border-white/10 relative z-10">
+<button class="w-full py-3 bg-secondary text-on-secondary font-label-md text-label-md rounded flex items-center justify-center gap-2 hover:brightness-110 transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="download">download</span>
+                            Download Full Synthesis Report
+                        </button>
+</div>
+</div>
+<!-- Suggested Further Reading -->
+<div class="bg-white border border-outline-variant rounded-xl p-6">
+<h3 class="font-label-md text-label-md text-primary mb-4 flex items-center gap-2 uppercase tracking-widest">
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="auto_stories">auto_stories</span>
+                        Suggested Reading
+                    </h3>
+<ul class="space-y-4">
+<li class="group cursor-pointer">
+<p class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors font-bold">Metabolic Pathways in the Prefrontal Cortex (2024)</p>
+<p class="text-[11px] text-outline">Relevance: High (ATP Depletion Context)</p>
+</li>
+<li class="group cursor-pointer">
+<p class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors font-bold">Non-invasive Micro-electrode Progress</p>
+<p class="text-[11px] text-outline">Relevance: Medium (Methodological Improvement)</p>
+</li>
+<li class="group cursor-pointer">
+<p class="font-label-sm text-label-sm text-on-surface group-hover:text-secondary transition-colors font-bold">Predicting Brain Fog: A Multi-modal Study</p>
+<p class="text-[11px] text-outline">Relevance: Structural Link</p>
+</li>
+</ul>
+</div>
+</div>
+<!-- Cross-Study Metrics Visualization -->
+<div class="col-span-12 bg-white border border-outline-variant rounded-xl p-8">
+<div class="flex justify-between items-center mb-8">
+<h2 class="font-headline-md text-headline-md text-primary">Cross-Study Metrics Comparison</h2>
+<div class="flex gap-4">
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 bg-secondary rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Study Alpha</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="w-3 h-3 bg-tertiary-container rounded-full"></div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Study Beta</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-12">
+<!-- Sample Size -->
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline mb-6 uppercase tracking-widest">Sample Size (n)</span>
+<div class="flex items-end gap-6 h-32 mb-4">
+<div class="w-1/2 flex flex-col items-center gap-2">
+<span class="font-label-md text-label-md font-bold text-secondary">2,450</span>
+<div class="w-full bg-secondary/20 rounded-t-sm" style="height: 100%">
+<div class="bg-secondary w-full rounded-t-sm" style="height: 100%"></div>
+</div>
+</div>
+<div class="w-1/2 flex flex-col items-center gap-2">
+<span class="font-label-md text-label-md font-bold text-tertiary-container">120</span>
+<div class="w-full bg-tertiary-container/20 rounded-t-sm" style="height: 5%">
+<div class="bg-tertiary-container w-full rounded-t-sm" style="height: 100%"></div>
+</div>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant italic">Alpha prioritized breadth (population), Beta prioritized depth (cellular resolution).</p>
+</div>
+<!-- Evidence Strength -->
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline mb-6 uppercase tracking-widest">Evidence Confidence</span>
+<div class="space-y-8 h-32 flex flex-col justify-center">
+<div>
+<div class="flex justify-between font-label-sm text-label-sm mb-2">
+<span>Study Alpha</span>
+<span>0.84</span>
+</div>
+<div class="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="bg-secondary h-full" style="width: 84%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between font-label-sm text-label-sm mb-2">
+<span>Study Beta</span>
+<span>0.96</span>
+</div>
+<div class="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+<div class="bg-tertiary-container h-full" style="width: 96%"></div>
+</div>
+</div>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant italic mt-4">Beta shows higher confidence due to invasive measurement precision.</p>
+</div>
+<!-- P-Values -->
+<div class="flex flex-col">
+<span class="font-label-sm text-label-sm text-outline mb-6 uppercase tracking-widest">Statistical Power (p)</span>
+<div class="h-32 flex items-center justify-center">
+<div class="flex items-center gap-8">
+<div class="text-center">
+<div class="font-headline-md text-headline-md text-secondary">0.005</div>
+<span class="font-label-sm text-label-sm text-outline">Study Alpha</span>
+</div>
+<div class="w-px h-12 bg-outline-variant"></div>
+<div class="text-center">
+<div class="font-headline-md text-headline-md text-tertiary-container">&lt;0.001</div>
+<span class="font-label-sm text-label-sm text-outline">Study Beta</span>
+</div>
+</div>
+</div>
+<div class="mt-4 p-3 bg-secondary/5 rounded border border-secondary/10 flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary" data-icon="check_circle">check_circle</span>
+<span class="font-label-sm text-label-sm text-secondary font-bold">Both studies satisfy rigorous p &lt; 0.05 thresholds.</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Recommended Next Steps (Bento Bottom) -->
+<div class="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<div class="p-6 bg-white border border-outline-variant rounded-xl flex flex-col h-full">
+<span class="font-label-sm text-label-sm text-secondary font-bold mb-2 uppercase">Step 01</span>
+<h4 class="font-headline-md text-headline-md mb-4 leading-tight">Validate with Meta-Analysis</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6 flex-1">Apply this synthesis model to a broader dataset of 15 related studies to ensure the "cliff-edge" exhaustion threshold is universal.</p>
+<button class="text-secondary font-label-md text-label-md flex items-center gap-1 hover:gap-2 transition-all">Execute Automated Query <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span></button>
+</div>
+<div class="p-6 bg-white border border-outline-variant rounded-xl flex flex-col h-full">
+<span class="font-label-sm text-label-sm text-secondary font-bold mb-2 uppercase">Step 02</span>
+<h4 class="font-headline-md text-headline-md mb-4 leading-tight">Identify High-Risk Segments</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6 flex-1">Filter the synthesis findings against specific professional groups (e.g., Air Traffic Controllers) to predict fatigue onset zones.</p>
+<button class="text-secondary font-label-md text-label-md flex items-center gap-1 hover:gap-2 transition-all">Open Demographic Filter <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span></button>
+</div>
+<div class="p-6 bg-white border border-outline-variant rounded-xl flex flex-col h-full">
+<span class="font-label-sm text-label-sm text-secondary font-bold mb-2 uppercase">Step 03</span>
+<h4 class="font-headline-md text-headline-md mb-4 leading-tight">Peer Review Simulation</h4>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-6 flex-1">Use the AI to simulate potential critiques of this synthesis to prepare for publication or internal reporting.</p>
+<button class="text-secondary font-label-md text-label-md flex items-center gap-1 hover:gap-2 transition-all">Launch Adversarial AI <span class="material-symbols-outlined text-[16px]" data-icon="arrow_forward">arrow_forward</span></button>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<footer class="mt-16 pt-8 border-t border-outline-variant flex justify-between items-center text-on-surface-variant font-label-sm text-label-sm">
+<p>© 2024 Research Intelligence Platform • Synthesis ID: RI-SYN-9981-AlphaBeta</p>
+<div class="flex gap-6">
+<a class="hover:text-primary transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-primary transition-colors" href="#">API Access</a>
+<a class="hover:text-primary transition-colors" href="#">Support</a>
+</div>
+</footer>
+</main>
+<!-- Micro-interaction Scripts -->
+<script>
+        // Add subtle hover lift to cards
+        const cards = document.querySelectorAll('.bg-white.border');
+        cards.forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.style.transform = 'translateY(-2px)';
+                card.style.boxShadow = '0 10px 15px -3px rgba(15, 23, 42, 0.05)';
+                card.style.transition = 'all 0.3s ease';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'translateY(0)';
+                card.style.boxShadow = 'none';
+            });
+        });
+    </script>
+</body></html>

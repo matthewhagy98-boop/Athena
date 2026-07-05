@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Research Intelligence | Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-container": "#86f2e4",
+                    "on-secondary-container": "#006f66",
+                    "primary-fixed": "#dae2fd",
+                    "surface-container-low": "#f2f4f6",
+                    "surface-dim": "#d8dadc",
+                    "tertiary-container": "#0b1c30",
+                    "background": "#f7f9fb",
+                    "secondary": "#006a61",
+                    "error-container": "#ffdad6",
+                    "surface-bright": "#f7f9fb",
+                    "outline": "#76777d",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "on-primary-fixed": "#131b2e",
+                    "primary-fixed-dim": "#bec6e0",
+                    "error": "#ba1a1a",
+                    "tertiary": "#000000",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "tertiary-fixed": "#d3e4fe",
+                    "primary": "#000000",
+                    "on-tertiary": "#ffffff",
+                    "on-background": "#191c1e",
+                    "on-error-container": "#93000a",
+                    "inverse-on-surface": "#eff1f3",
+                    "surface-container-highest": "#e0e3e5",
+                    "surface-tint": "#565e74",
+                    "on-secondary-fixed": "#00201d",
+                    "surface-variant": "#e0e3e5",
+                    "inverse-primary": "#bec6e0",
+                    "inverse-surface": "#2d3133",
+                    "on-tertiary-container": "#75859d",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "surface-container": "#eceef0",
+                    "on-surface-variant": "#45464d",
+                    "on-primary-container": "#7c839b",
+                    "on-secondary": "#ffffff",
+                    "surface": "#f7f9fb",
+                    "surface-container-high": "#e6e8ea",
+                    "on-secondary-fixed-variant": "#005049",
+                    "secondary-fixed-dim": "#6bd8cb",
+                    "on-error": "#ffffff",
+                    "outline-variant": "#c6c6cd",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "on-primary": "#ffffff",
+                    "on-surface": "#191c1e",
+                    "secondary-fixed": "#89f5e7",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-container": "#131b2e"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "gutter": "24px",
+                    "unit": "4px",
+                    "margin-desktop": "48px",
+                    "margin-mobile": "16px",
+                    "max-width-content": "1200px"
+            },
+            "fontFamily": {
+                    "body-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "headline-xl": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-lg": ["\"Source Serif 4\""],
+                    "headline-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "body-md": ["\"Source Serif 4\""]
+            },
+            "fontSize": {
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .line-clamp-3 {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 24px;
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-sm overflow-x-hidden">
+<!-- SideNavBar Anchor -->
+<aside class="bg-tertiary-container text-on-tertiary-fixed h-screen w-64 fixed left-0 top-0 flex flex-col py-8 px-4 z-50">
+<div class="mb-8 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed">Research Intelligence</h1>
+<p class="font-label-sm text-label-sm text-on-tertiary-container opacity-80 uppercase tracking-widest mt-1">Academic Authority</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="bg-secondary text-on-secondary rounded-lg flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span class="font-label-md text-label-md">Search</span>
+</a>
+<a class="text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="interests">interests</span>
+<span class="font-label-md text-label-md">Interests</span>
+</a>
+<a class="text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="compare_arrows">compare_arrows</span>
+<span class="font-label-md text-label-md">Comparisons</span>
+</a>
+<a class="text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="save">save</span>
+<span class="font-label-md text-label-md">Saved Searches</span>
+</a>
+<a class="text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 flex items-center gap-3 px-3 py-2.5 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks">bookmarks</span>
+<span class="font-label-md text-label-md">Bookmarks</span>
+</a>
+</nav>
+<div class="mt-auto flex items-center gap-3 px-2 pt-4 border-t border-on-tertiary-container/20">
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container font-bold overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a senior research academic in their late 40s, featuring soft studio lighting and a neutral grey background. The style is crisp and corporate, fitting for a high-end academic platform. The subject is wearing dark professional attire, evoking a sense of expertise and computational precision." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1rX3vPYVy8GUoe9Au01UqNuyt2Pq5AmVGVzAiscK8WQTvEB_YBVPQvycSDeEIGrebXgVKWHXEjfM4tV6BhADPN5eYJtdnkry3yUfS4rQcHc1BYliKO6mxjGK3IbsPJuGXP1Zk6qLiYg4y0IGtNxSYbb02tzOt8rwvRogJ0XxUu4xSk6-qU98yv2p8tWFLu0aYcQvkLh7UW__KXQ8_zu_UQIhFSUiNE8o_nnrz6vobOV2LWVu4xdXqkA"/>
+</div>
+<div class="overflow-hidden">
+<p class="font-label-md text-label-md text-on-tertiary-fixed truncate">Dr. Aris Thorne</p>
+<p class="font-label-sm text-label-sm text-on-tertiary-container truncate">Lead Analyst</p>
+</div>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="ml-64 min-h-screen">
+<!-- TopNavBar Anchor -->
+<header class="bg-surface sticky top-0 z-40 border-b border-outline-variant flex justify-between items-center h-16 px-gutter w-full">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-secondary">search</span>
+<input class="w-full pl-10 pr-4 py-2 bg-surface-container border border-outline-variant rounded-lg font-body-sm focus:ring-2 focus:ring-secondary focus:border-secondary outline-none transition-all" placeholder="Query 4.2B research papers..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Content Area -->
+<div class="max-w-[1200px] mx-auto py-8 px-margin-desktop">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Research Intelligence Dashboard</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-1 italic">Synthesizing current developments in Theoretical Astrophysics.</p>
+</div>
+<div class="flex gap-3">
+<button class="px-4 py-2 bg-surface border border-outline-variant rounded-lg font-label-md text-on-surface hover:bg-surface-container transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">history</span>
+                        View History
+                    </button>
+<button class="px-4 py-2 bg-tertiary-container text-on-tertiary-fixed rounded-lg font-label-md hover:bg-black transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+                        Run Deep Analysis
+                    </button>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="bento-grid">
+<!-- Weekly Research Blurb (Span 8) -->
+<section class="col-span-12 lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-8 flex flex-col gap-6">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<span class="p-2 bg-secondary/10 text-secondary rounded-lg">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</span>
+<h3 class="font-headline-md text-headline-md">Weekly Research Blurb</h3>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant px-3 py-1 bg-surface-container rounded-full">Week of Oct 24, 2023</span>
+</div>
+<div class="space-y-6">
+<p class="font-body-lg text-body-lg text-on-surface leading-relaxed">
+                            Recent observations from the <span class="text-secondary font-semibold">JWST Deep Field</span> suggest a 15% discrepancy in the predicted galaxy formation rates during the Epoch of Reionization. While previous models assumed a strictly hierarchical growth, new spectral analysis indicates a period of accelerated baryonic accumulation.
+                        </p>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/30">
+<h4 class="font-label-md text-label-md text-secondary mb-2 uppercase tracking-wide">Key Insight</h4>
+<p class="font-body-sm text-body-sm">Dark matter filament cooling is significantly more efficient at z &gt; 10 than initially modeled in the 2021 consensus.</p>
+</div>
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/30">
+<h4 class="font-label-md text-label-md text-secondary mb-2 uppercase tracking-wide">Paradigm Shift</h4>
+<p class="font-body-sm text-body-sm">Transition from "passive accumulation" to "active feedback" loops in early stellar population simulations.</p>
+</div>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant flex justify-between items-center">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-white bg-slate-200"></div>
+<div class="w-8 h-8 rounded-full border-2 border-white bg-slate-300"></div>
+<div class="w-8 h-8 rounded-full border-2 border-white bg-slate-400"></div>
+<div class="w-8 h-8 flex items-center justify-center rounded-full border-2 border-white bg-surface-container text-[10px] font-bold">+12</div>
+</div>
+<button class="text-secondary font-label-md flex items-center gap-1 hover:underline">
+                            Read Full Synthesis
+                            <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</section>
+<!-- Trending in your Field (Span 4) -->
+<aside class="col-span-12 lg:col-span-4 bg-surface-container-low rounded-xl p-6 border border-outline-variant flex flex-col">
+<h3 class="font-headline-md text-headline-md mb-6">Trending in your Field</h3>
+<div class="space-y-5 flex-1">
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<span class="font-headline-md text-headline-md text-outline-variant opacity-50 group-hover:text-secondary group-hover:opacity-100 transition-all">01</span>
+<div>
+<h4 class="font-label-md text-label-md group-hover:text-secondary transition-colors line-clamp-2">Stochasticity in Gravitational Wave detection signatures</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">4.2k Citations • 2d ago</p>
+</div>
+</div>
+</div>
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<span class="font-headline-md text-headline-md text-outline-variant opacity-50 group-hover:text-secondary group-hover:opacity-100 transition-all">02</span>
+<div>
+<h4 class="font-label-md text-label-md group-hover:text-secondary transition-colors line-clamp-2">Bose-Einstein Condensate simulators for black hole event horizons</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">3.8k Citations • 4d ago</p>
+</div>
+</div>
+</div>
+<div class="group cursor-pointer">
+<div class="flex items-start gap-4">
+<span class="font-headline-md text-headline-md text-outline-variant opacity-50 group-hover:text-secondary group-hover:opacity-100 transition-all">03</span>
+<div>
+<h4 class="font-label-md text-label-md group-hover:text-secondary transition-colors line-clamp-2">Lyman-alpha forest anomalies at high redshift</h4>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">1.1k Citations • 1w ago</p>
+</div>
+</div>
+</div>
+</div>
+<button class="mt-8 w-full py-3 border border-outline text-on-surface font-label-md rounded-lg hover:bg-surface-container-highest transition-colors">
+                        Discover More
+                    </button>
+</aside>
+<!-- Quick-Answer Sections (Row of 3) -->
+<div class="col-span-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Section 1 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center gap-3 mb-4">
+<span class="material-symbols-outlined text-secondary">update</span>
+<h4 class="font-label-md text-label-md">What changed today?</h4>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                            3 new pre-prints published regarding <span class="font-semibold text-on-surface">Neutrino Oscillations</span>. 1 major retraction in the "Superfluid Vacuum" theory thread.
+                        </p>
+</div>
+<!-- Section 2 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center gap-3 mb-4">
+<span class="material-symbols-outlined text-secondary">verified</span>
+<h4 class="font-label-md text-label-md">Strength of evidence</h4>
+</div>
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<span class="text-[10px] font-bold uppercase text-on-surface-variant">Confidence Level</span>
+<span class="font-label-sm text-label-sm text-secondary">88% (High)</span>
+</div>
+<div class="h-2 w-full bg-surface-container rounded-full overflow-hidden flex">
+<div class="h-full bg-secondary w-4/5"></div>
+<div class="h-full bg-secondary/40 w-[8%]"></div>
+<div class="h-full bg-transparent flex-1"></div>
+</div>
+<p class="text-[11px] text-on-surface-variant italic">Based on 14 peer-reviewed meta-analyses.</p>
+</div>
+</div>
+<!-- Section 3 -->
+<div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant shadow-sm hover:shadow-md transition-shadow">
+<div class="flex items-center gap-3 mb-4">
+<span class="material-symbols-outlined text-secondary">groups</span>
+<h4 class="font-label-md text-label-md">Consensus/Disagreements</h4>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+                            General agreement on <span class="underline decoration-secondary/30 decoration-2">Dark Energy scaling</span>. Growing friction regarding the Hubble Tension (H0) values between SH0ES and Planck.
+                        </p>
+</div>
+</div>
+<!-- Saved Searches (Span 12) -->
+<section class="col-span-12 bg-surface p-6 rounded-xl border border-outline-variant">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-label-md text-label-md uppercase tracking-widest text-on-surface-variant">Saved Searches &amp; Queries</h3>
+<button class="text-secondary font-label-sm">Manage All</button>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="p-4 bg-white border border-outline-variant rounded-lg hover:border-secondary transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-secondary">folder_open</span>
+<span class="text-[10px] text-on-surface-variant">2h ago</span>
+</div>
+<p class="font-label-md text-label-md">Hubble Tension Meta-Analysis</p>
+<p class="text-[11px] text-on-surface-variant mt-1">Filters: [2020-2024], [Q1 Journals]</p>
+</div>
+<div class="p-4 bg-white border border-outline-variant rounded-lg hover:border-secondary transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-secondary">folder_open</span>
+<span class="text-[10px] text-on-surface-variant">Oct 21</span>
+</div>
+<p class="font-label-md text-label-md">Galaxy Morphological Evolution</p>
+<p class="text-[11px] text-on-surface-variant mt-1">Filters: [Images Required]</p>
+</div>
+<div class="p-4 bg-white border border-outline-variant rounded-lg hover:border-secondary transition-all cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<span class="material-symbols-outlined text-on-surface-variant group-hover:text-secondary">folder_open</span>
+<span class="text-[10px] text-on-surface-variant">Oct 18</span>
+</div>
+<p class="font-label-md text-label-md">Neutron Star Mergers</p>
+<p class="text-[11px] text-on-surface-variant mt-1">Filters: [Citations &gt; 50]</p>
+</div>
+<div class="p-4 bg-surface-container-low border border-dashed border-outline-variant rounded-lg hover:bg-surface-container transition-all cursor-pointer flex flex-col items-center justify-center text-on-surface-variant">
+<span class="material-symbols-outlined">add_circle</span>
+<span class="text-[11px] mt-2 font-bold">New Project Bundle</span>
+</div>
+</div>
+</section>
+</div>
+</div>
+<!-- Footer / Credits -->
+<footer class="max-w-[1200px] mx-auto px-margin-desktop py-8 border-t border-outline-variant/30 flex justify-between items-center text-on-surface-variant">
+<div class="flex gap-6">
+<a class="font-label-sm text-label-sm hover:text-secondary" href="#">Privacy Protocol</a>
+<a class="font-label-sm text-label-sm hover:text-secondary" href="#">System Status</a>
+<a class="font-label-sm text-label-sm hover:text-secondary" href="#">API Access</a>
+</div>
+<p class="font-label-sm text-label-sm">© 2023 Research Intelligence. Powered by Academic Authority Engines.</p>
+</footer>
+</main>
+<script>
+        // Micro-interaction for cards
+        document.querySelectorAll('.bento-grid > section, .bento-grid > aside, .bento-grid > div').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.style.transform = 'translateY(-2px)';
+                card.style.transition = 'transform 0.2s ease-out';
+            });
+            card.addEventListener('mouseleave', () => {
+                card.style.transform = 'translateY(0)';
+            });
+        });
+    </script>
+</body></html>

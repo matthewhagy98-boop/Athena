@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Research Intelligence | Study Comparison</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "secondary-container": "#86f2e4",
+                        "on-secondary-container": "#006f66",
+                        "primary-fixed": "#dae2fd",
+                        "surface-container-low": "#f2f4f6",
+                        "surface-dim": "#d8dadc",
+                        "tertiary-container": "#0b1c30",
+                        "background": "#f7f9fb",
+                        "secondary": "#006a61",
+                        "error-container": "#ffdad6",
+                        "surface-bright": "#f7f9fb",
+                        "outline": "#76777d",
+                        "tertiary-fixed-dim": "#b7c8e1",
+                        "on-primary-fixed": "#131b2e",
+                        "primary-fixed-dim": "#bec6e0",
+                        "error": "#ba1a1a",
+                        "tertiary": "#000000",
+                        "on-tertiary-fixed": "#0b1c30",
+                        "tertiary-fixed": "#d3e4fe",
+                        "primary": "#000000",
+                        "on-tertiary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-error-container": "#93000a",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface-container-highest": "#e0e3e5",
+                        "surface-tint": "#565e74",
+                        "on-secondary-fixed": "#00201d",
+                        "surface-variant": "#e0e3e5",
+                        "inverse-primary": "#bec6e0",
+                        "inverse-surface": "#2d3133",
+                        "on-tertiary-container": "#75859d",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "surface-container": "#eceef0",
+                        "on-surface-variant": "#45464d",
+                        "on-primary-container": "#7c839b",
+                        "on-secondary": "#ffffff",
+                        "surface": "#f7f9fb",
+                        "surface-container-high": "#e6e8ea",
+                        "on-secondary-fixed-variant": "#005049",
+                        "secondary-fixed-dim": "#6bd8cb",
+                        "on-error": "#ffffff",
+                        "outline-variant": "#c6c6cd",
+                        "on-tertiary-fixed-variant": "#38485d",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#191c1e",
+                        "secondary-fixed": "#89f5e7",
+                        "surface-container-lowest": "#ffffff",
+                        "primary-container": "#131b2e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter": "24px",
+                        "unit": "4px",
+                        "margin-desktop": "48px",
+                        "margin-mobile": "16px",
+                        "max-width-content": "1200px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "label-md": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-lg": ["\"Source Serif 4\""],
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-md": ["\"Source Serif 4\""]
+                    },
+                    "fontSize": {
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 200px 1fr 1fr;
+        }
+        @media (max-width: 1024px) {
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .scroll-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scroll-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .evidence-bar {
+            height: 4px;
+            background: #E2E8F0;
+            border-radius: 2px;
+            position: relative;
+        }
+        .evidence-fill {
+            height: 100%;
+            background: #006a61;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-sm scroll-hide selection:bg-secondary-container">
+<!-- SideNavBar Anchor -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-tertiary-container flex flex-col py-8 px-4 z-50">
+<div class="mb-12">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed">Research Intelligence</h1>
+<p class="text-on-tertiary-container font-label-sm uppercase tracking-wider mt-1">Academic Authority</p>
+</div>
+<nav class="flex-grow space-y-2">
+<a class="flex items-center gap-3 px-4 py-3 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+                Search
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="interests">interests</span>
+                Interests
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 bg-secondary text-on-secondary rounded-lg transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="compare_arrows">compare_arrows</span>
+                Comparisons
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="save">save</span>
+                Saved Searches
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks">bookmarks</span>
+                Bookmarks
+            </a>
+</nav>
+<div class="mt-auto pt-4 flex items-center gap-3 border-t border-on-tertiary-container/20">
+<img class="w-10 h-10 rounded-full object-cover" data-alt="A professional studio portrait of a senior research scientist with a neutral expression, high-end editorial photography style, soft focus background of a library, warm lighting, deep blue color palette." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBURzVvbhfPVRHPGUQtC55I2qvMfyHp8fj1M_uMSn6gk5HsGGuE6wnGbO8b5g4DgjGuR8OZquhrGmagAzK3mVLyYN7MqZegJzvYuGdzlhNWMvipUlJLveXUd96vRPnPObF6fdsPkp00Qz_kKj7CQUcuOfKU9NmxDM1F31Kmfvh1WPOWXW7amkYes7llCWKbZw_n0Krf7q-VeDvJ3sPnrvWv-ajlC5hxvu6Rz1kmKUAgRiW5EYbY6dw9hQ"/>
+<div class="overflow-hidden">
+<p class="text-on-tertiary-fixed font-label-md truncate">Dr. Aris Thorne</p>
+<p class="text-on-tertiary-container text-xs truncate">Principal Lead</p>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-64 min-h-screen pb-16">
+<!-- TopNavBar Primary -->
+<header class="sticky top-0 bg-surface border-b border-outline-variant z-40 flex justify-between items-center h-16 px-gutter w-full">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md focus-within:ring-2 focus-within:ring-secondary rounded-lg">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant scale-90" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-2 text-body-sm focus:ring-0" placeholder="Search studies to compare..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- TopNavBar Filters (Secondary Nav) -->
+<div class="sticky top-16 bg-surface-container-low border-b border-outline-variant z-30 flex items-center gap-4 h-12 px-gutter w-full shadow-sm">
+<span class="text-on-surface-variant font-label-sm mr-2 uppercase tracking-tight">Active Filters:</span>
+<button class="text-primary font-bold bg-white px-3 py-1 rounded-full border border-outline-variant text-label-sm transition-all hover:bg-surface-container-high scale-95 active:scale-90">Population</button>
+<button class="text-on-surface-variant px-3 py-1 text-label-sm transition-all hover:bg-surface-container-high scale-95 active:scale-90">Study Type</button>
+<button class="text-on-surface-variant px-3 py-1 text-label-sm transition-all hover:bg-surface-container-high scale-95 active:scale-90">Date Range</button>
+<div class="flex-grow"></div>
+<button class="bg-secondary text-on-secondary px-4 py-1.5 rounded-full text-label-sm font-bold transition-all hover:opacity-90 scale-95 active:scale-90">Apply Filters</button>
+</div>
+<!-- Content Canvas -->
+<div class="max-w-[1200px] mx-auto mt-8 px-gutter">
+<div class="mb-8 flex justify-between items-end">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-primary">Study Comparison Analysis</h2>
+<p class="font-body-md text-on-surface-variant mt-2 max-w-2xl">Cross-referencing neurological impact factors across longitudinal clinical datasets. Highlighting divergence in methodology and outcome confidence.</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 border border-outline-variant px-4 py-2 rounded font-label-md text-primary hover:bg-surface-container transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="share">share</span> Share
+                    </button>
+<button class="flex items-center gap-2 bg-primary text-on-primary px-6 py-2 rounded font-label-md hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-sm" data-icon="picture_as_pdf">picture_as_pdf</span> Export Report
+                    </button>
+</div>
+</div>
+<!-- Comparison Table Shell -->
+<div class="bg-white border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+<!-- Table Header: Study Selection -->
+<div class="comparison-grid bg-surface-container-lowest border-b border-outline-variant">
+<div class="p-6 border-r border-outline-variant flex flex-col justify-center">
+<p class="font-label-sm text-on-surface-variant uppercase tracking-widest">Metadata</p>
+</div>
+<!-- Paper A -->
+<div class="p-6 border-r border-outline-variant relative group">
+<span class="absolute top-4 left-4 bg-secondary/10 text-secondary text-[10px] font-bold px-2 py-0.5 rounded-full">STUDY ALPHA</span>
+<h3 class="font-headline-md text-headline-md mt-6 leading-tight">Neural Correlates of Cognitive Load in High-Frequency Environments</h3>
+<p class="font-label-sm text-on-surface-variant mt-2">Dr. Elena Rostova et al. (2023)</p>
+<div class="mt-4 flex gap-2">
+<span class="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-xs font-medium">Q1 Journal</span>
+<span class="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-xs font-medium">Peer Reviewed</span>
+</div>
+</div>
+<!-- Paper B -->
+<div class="p-6">
+<span class="absolute top-4 left-4 bg-tertiary-container/10 text-on-tertiary-container text-[10px] font-bold px-2 py-0.5 rounded-full">STUDY BETA</span>
+<h3 class="font-headline-md text-headline-md mt-6 leading-tight">Synaptic Fatigue and Information Density: A Macro-Level Behavioral Study</h3>
+<p class="font-label-sm text-on-surface-variant mt-2">Prof. Marcus Sterling (2024)</p>
+<div class="mt-4 flex gap-2">
+<span class="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-xs font-medium">Nature-X</span>
+<span class="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-xs font-medium">Meta-Analysis</span>
+</div>
+</div>
+</div>
+<!-- Comparison Rows -->
+<!-- Row: Methodology -->
+<div class="comparison-grid border-b border-outline-variant hover:bg-surface-container-lowest transition-colors">
+<div class="p-6 border-r border-outline-variant bg-surface-container-low/30">
+<p class="font-label-md text-primary">Methodology</p>
+</div>
+<div class="p-6 border-r border-outline-variant font-body-md text-on-surface leading-relaxed">
+                        fMRI-based observational study monitoring real-time cortical activation during 30-minute high-complexity logic puzzles. Precise temporal resolution.
+                    </div>
+<div class="p-6 font-body-md text-on-surface leading-relaxed">
+                        Self-reported cognitive fatigue survey combined with large-scale digital usage telemetry. Broad spatial context but lower controlled precision.
+                    </div>
+</div>
+<!-- Row: Sample Size -->
+<div class="comparison-grid border-b border-outline-variant hover:bg-surface-container-lowest transition-colors">
+<div class="p-6 border-r border-outline-variant bg-surface-container-low/30">
+<p class="font-label-md text-primary">Sample Size</p>
+</div>
+<div class="p-6 border-r border-outline-variant flex items-center">
+<div>
+<p class="font-headline-md text-primary">n = 124</p>
+<p class="text-xs text-on-surface-variant font-label-sm">High-control laboratory group</p>
+</div>
+</div>
+<div class="p-6 flex items-center">
+<div>
+<p class="font-headline-md text-primary">n = 14,200+</p>
+<p class="text-xs text-on-surface-variant font-label-sm">Global decentralized telemetry</p>
+</div>
+</div>
+</div>
+<!-- Row: Evidence Strength -->
+<div class="comparison-grid border-b border-outline-variant hover:bg-surface-container-lowest transition-colors">
+<div class="p-6 border-r border-outline-variant bg-surface-container-low/30">
+<p class="font-label-md text-primary">Evidence Strength</p>
+</div>
+<div class="p-6 border-r border-outline-variant">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-sm text-secondary">High Confidence</span>
+<span class="font-label-sm">88%</span>
+</div>
+<div class="evidence-bar">
+<div class="evidence-fill" style="width: 88%"></div>
+</div>
+<p class="mt-3 text-xs italic text-on-surface-variant">Validated through triple-blind cross-validation of neural imagery.</p>
+</div>
+<div class="p-6">
+<div class="flex justify-between items-center mb-2">
+<span class="font-label-sm text-secondary">Moderate Confidence</span>
+<span class="font-label-sm">62%</span>
+</div>
+<div class="evidence-bar">
+<div class="evidence-fill" style="width: 62%"></div>
+</div>
+<p class="mt-3 text-xs italic text-on-surface-variant">Self-reporting introduces significant noise and cultural bias variables.</p>
+</div>
+</div>
+<!-- Row: Key Findings -->
+<div class="comparison-grid border-b border-outline-variant hover:bg-surface-container-lowest transition-colors">
+<div class="p-6 border-r border-outline-variant bg-surface-container-low/30">
+<p class="font-label-md text-primary">Key Findings</p>
+</div>
+<div class="p-6 border-r border-outline-variant">
+<ul class="space-y-4 font-body-md text-on-surface">
+<li class="flex gap-3">
+<span class="material-symbols-outlined text-secondary shrink-0" data-icon="check_circle">check_circle</span>
+                                Linear correlation between data density and prefrontal cortex exhaustion.
+                            </li>
+<li class="flex gap-3">
+<span class="material-symbols-outlined text-secondary shrink-0" data-icon="check_circle">check_circle</span>
+                                Recovery time increases exponentially after 4 hours of exposure.
+                            </li>
+</ul>
+</div>
+<div class="p-6">
+<ul class="space-y-4 font-body-md text-on-surface">
+<li class="flex gap-3">
+<span class="material-symbols-outlined text-secondary shrink-0" data-icon="check_circle">check_circle</span>
+                                Peak information saturation occurs mid-day (11 AM - 1 PM) across most demographics.
+                            </li>
+<li class="flex gap-3">
+<span class="material-symbols-outlined text-secondary shrink-0" data-icon="warning">warning</span>
+                                Contradiction: Findings suggest sleep quality is a higher impact variable than exposure time.
+                            </li>
+</ul>
+</div>
+</div>
+<!-- Row: Limitations -->
+<div class="comparison-grid hover:bg-surface-container-lowest transition-colors">
+<div class="p-6 border-r border-outline-variant bg-surface-container-low/30">
+<p class="font-label-md text-primary">Limitations</p>
+</div>
+<div class="p-6 border-r border-outline-variant font-body-sm text-on-surface-variant italic">
+                        Highly sterile environment may not reflect multi-tasking realities of modern workplace stressors.
+                    </div>
+<div class="p-6 font-body-sm text-on-surface-variant italic">
+                        Reliance on consumer-grade device telemetry might exclude populations with low digital penetration.
+                    </div>
+</div>
+</div>
+<!-- AI Insight Overlay / Summary -->
+<div class="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="md:col-span-2 bg-tertiary-container text-on-tertiary p-8 rounded-xl relative overflow-hidden">
+<div class="absolute top-0 right-0 w-64 h-64 opacity-10 pointer-events-none">
+
+</div>
+<div class="relative z-10">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-secondary-fixed" data-icon="auto_awesome">auto_awesome</span>
+<h4 class="font-label-md uppercase tracking-wider text-secondary-fixed">AI Comparison Synthesis</h4>
+</div>
+<p class="font-body-lg text-white/90 leading-relaxed">
+                            While Study Alpha provides superior neurological mechanistic evidence, Study Beta offers the necessary scale to validate these findings in diverse ecological settings. <span class="text-secondary-fixed font-semibold">The key contradiction lies in the "Saturation Threshold":</span> Alpha suggests a 4-hour limit, whereas Beta indicates that threshold is dynamic based on user chronotype.
+                        </p>
+<div class="mt-6 flex gap-4">
+<button class="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-label-sm transition-colors border border-white/20">Generate Hypothesis</button>
+<button class="bg-white/10 hover:bg-white/20 px-4 py-2 rounded text-label-sm transition-colors border border-white/20">Find Third Reference</button>
+</div>
+</div>
+</div>
+<div class="bg-white border border-outline-variant p-6 rounded-xl flex flex-col justify-between">
+<div>
+<h4 class="font-label-md text-primary mb-4">Conflict Resolution</h4>
+<div class="space-y-4">
+<div class="flex items-start gap-3">
+<div class="w-2 h-2 rounded-full bg-error mt-2"></div>
+<div>
+<p class="text-xs font-bold text-on-surface">Temporal Divergence</p>
+<p class="text-xs text-on-surface-variant">Studies disagree on the impact of afternoon breaks on neural reset.</p>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<div class="w-2 h-2 rounded-full bg-secondary mt-2"></div>
+<div>
+<p class="text-xs font-bold text-on-surface">Methodological Synergy</p>
+<p class="text-xs text-on-surface-variant">Both papers confirm the "Prefrontal Bottleneck" theory.</p>
+</div>
+</div>
+</div>
+</div>
+<button class="w-full text-center py-2 text-secondary font-label-sm hover:underline mt-4">Deep Dive on Conflicts</button>
+</div>
+</div>
+<!-- Related Citations Grid (Bento Style) -->
+<div class="mt-16 mb-8">
+<h3 class="font-headline-md text-headline-md mb-6">Cross-Reference Library</h3>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+<div class="md:col-span-2 bg-white border border-outline-variant p-4 rounded-lg hover:border-secondary transition-colors cursor-pointer group">
+<div class="flex justify-between items-start mb-2">
+<p class="text-[10px] font-bold text-secondary-container bg-secondary px-2 py-0.5 rounded uppercase">Highly Cited</p>
+<span class="material-symbols-outlined text-sm opacity-0 group-hover:opacity-100 transition-opacity" data-icon="open_in_new">open_in_new</span>
+</div>
+<h5 class="font-label-md text-primary">The Dopamine Feedback Loop in Digital Consumption</h5>
+<p class="text-xs text-on-surface-variant mt-1 line-clamp-2">Exploring how algorithmic triggers bypass executive function and accelerate cognitive fatigue across all age groups.</p>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-lg hover:border-secondary transition-colors cursor-pointer">
+<h5 class="font-label-md text-primary">Circadian Neural Patterns</h5>
+<p class="text-[10px] font-bold text-on-surface-variant/50 mt-2">2022 • DR. SMITH</p>
+</div>
+<div class="bg-white border border-outline-variant p-4 rounded-lg hover:border-secondary transition-colors cursor-pointer">
+<h5 class="font-label-md text-primary">Plasticity vs. Fatigue</h5>
+<p class="text-[10px] font-bold text-on-surface-variant/50 mt-2">2021 • UNV. OXFORD</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Interactive Layer: Hover Effects and Micro-Interactions Script -->
+<script>
+        document.querySelectorAll('.comparison-grid').forEach(row => {
+            row.addEventListener('mouseenter', () => {
+                row.style.transform = 'translateX(4px)';
+                row.style.transition = 'transform 0.2s ease-out';
+            });
+            row.addEventListener('mouseleave', () => {
+                row.style.transform = 'translateX(0)';
+            });
+        });
+
+        // Add visual indicator for data icons using Material Symbols
+        document.querySelectorAll('[data-icon]').forEach(el => {
+            if (!el.classList.contains('material-symbols-outlined')) {
+                const iconName = el.getAttribute('data-icon');
+                el.classList.add('material-symbols-outlined');
+                el.innerText = iconName;
+            }
+        });
+    </script>
+</body></html>

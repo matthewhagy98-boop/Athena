@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Research Intelligence | Neural Correlates of Cognitive Load</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:ital,wght@0,400;0,600;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .evidence-gradient {
+            background: linear-gradient(90deg, #006a61 88%, #e0e3e5 88%);
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f7f9fb;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c6c6cd;
+            border-radius: 10px;
+        }
+        .active-nav-tab {
+            background-color: #006a61;
+            color: #ffffff;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#0b1c30",
+                        "on-primary-fixed-variant": "#3f465c",
+                        "on-error-container": "#93000a",
+                        "background": "#f7f9fb",
+                        "on-primary-fixed": "#131b2e",
+                        "secondary-fixed-dim": "#6bd8cb",
+                        "on-surface": "#191c1e",
+                        "tertiary-container": "#0b1c30",
+                        "surface": "#f7f9fb",
+                        "on-tertiary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "secondary": "#006a61",
+                        "on-tertiary-container": "#75859d",
+                        "surface-bright": "#f7f9fb",
+                        "surface-variant": "#e0e3e5",
+                        "tertiary-fixed": "#d3e4fe",
+                        "inverse-primary": "#bec6e0",
+                        "surface-tint": "#565e74",
+                        "outline-variant": "#c6c6cd",
+                        "error": "#ba1a1a",
+                        "on-secondary-container": "#006f66",
+                        "on-secondary-fixed": "#00201d",
+                        "surface-container": "#eceef0",
+                        "tertiary-fixed-dim": "#b7c8e1",
+                        "secondary-container": "#86f2e4",
+                        "on-surface-variant": "#45464d",
+                        "surface-dim": "#d8dadc",
+                        "surface-container-high": "#e6e8ea",
+                        "error-container": "#ffdad6",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f2f4f6",
+                        "secondary-fixed": "#89f5e7",
+                        "primary-container": "#131b2e",
+                        "outline": "#76777d",
+                        "on-tertiary-fixed-variant": "#38485d",
+                        "primary-fixed": "#dae2fd",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#7c839b",
+                        "inverse-on-surface": "#eff1f3",
+                        "tertiary": "#000000",
+                        "on-secondary-fixed-variant": "#005049",
+                        "surface-container-highest": "#e0e3e5",
+                        "on-background": "#191c1e",
+                        "primary-fixed-dim": "#bec6e0",
+                        "primary": "#000000",
+                        "inverse-surface": "#2d3133",
+                        "on-primary": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "margin-desktop": "48px",
+                        "max-width-content": "1200px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-xl": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "body-md": ["\"Source Serif 4\""],
+                        "body-lg": ["\"Source Serif 4\""],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                        "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                        "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}],
+                        "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-sm selection:bg-secondary-container">
+<!-- Sidebar Navigation Shell -->
+<aside class="h-screen w-64 fixed left-0 top-0 bg-tertiary-container flex flex-col py-8 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed tracking-tight">Research Intelligence</h1>
+<p class="font-label-sm text-label-sm text-on-tertiary-container uppercase tracking-widest mt-1">Academic Authority</p>
+</div>
+<nav class="flex-grow space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 bg-secondary text-on-secondary rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+                Search
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="interests">interests</span>
+                Interests
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="compare_arrows">compare_arrows</span>
+                Comparisons
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="save">save</span>
+                Saved Searches
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors rounded-lg font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks">bookmarks</span>
+                Bookmarks
+            </a>
+</nav>
+<div class="mt-auto pt-8 border-t border-on-tertiary-container/20 px-2 flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional studio portrait of a senior research scientist with glasses, wearing a neutral-toned academic sweater, against a soft-focus library background. The lighting is clean and professional, using high-key studio techniques to create a sharp but approachable corporate look." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCtbcrKoc3k0fWCT3YyaUKQCFqumVbQbpUQY4RMLf2CNacWaAGoWA1iuN79SQMoC5VXYNjRdfG_2cnCfTrhvTbSGrLD-zJzeYlvZ6sRKu1_7_y9vabpZAFAiy7JCgDLONfbStg_zKqEbMfucxKnhK8pwGhDTS0_6b8ggGrJQVVitZMtHmVX_m2IFaEA0Hwvudjk_CAGJdbi7eFskntUoDQ8rYrrn6PkZDTBxeU3S-VW7G1bAH1Wq_9sUA"/>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-tertiary">Dr. Aris Thorne</p>
+<p class="text-[10px] text-on-tertiary-container uppercase tracking-tighter">Principal Analyst</p>
+</div>
+</div>
+</aside>
+<!-- Top AppBar Shell -->
+<header class="flex justify-between items-center h-16 px-gutter ml-64 w-[calc(100%-16rem)] sticky top-0 bg-surface z-40 border-b border-outline-variant">
+<div class="flex items-center gap-6 w-1/2">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-full py-1.5 pl-10 pr-4 font-body-sm focus:ring-2 focus:ring-secondary focus:border-secondary transition-all outline-none" placeholder="Search academic database..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="px-4 py-2 bg-primary text-on-primary rounded font-label-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]" data-icon="upload_file">upload_file</span>
+                Submit Paper
+            </button>
+</div>
+</header>
+<!-- Secondary Navigation (Breadcrumbs/Status) -->
+<div class="flex items-center gap-4 h-12 px-gutter ml-64 w-[calc(100%-16rem)] sticky top-16 bg-surface-container-low border-b border-outline-variant z-30 shadow-sm">
+<nav class="flex items-center gap-2 text-on-surface-variant font-label-sm">
+<a class="hover:text-primary" href="#">Neuroscience</a>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<a class="hover:text-primary" href="#">Cognitive Load</a>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-secondary font-bold">Article Detail</span>
+</nav>
+<div class="ml-auto flex items-center gap-6">
+<span class="flex items-center gap-1.5 font-label-sm text-secondary">
+<span class="material-symbols-outlined text-[16px]" data-icon="verified" style="font-variation-settings: 'FILL' 1;">verified</span>
+                Peer Reviewed
+            </span>
+<div class="h-4 w-[1px] bg-outline-variant"></div>
+<span class="text-on-surface-variant font-label-sm">DOI: 10.1038/nn.2024.452</span>
+</div>
+</div>
+<!-- Main Content Canvas -->
+<main class="ml-64 p-gutter max-w-max-width-content">
+<div class="grid grid-cols-12 gap-8">
+<!-- Left Column: Article Header & Main Text (8 Columns) -->
+<article class="col-span-8 space-y-8">
+<!-- Title & Authors -->
+<section class="space-y-4">
+<h2 class="font-headline-xl text-headline-xl text-primary leading-tight">Neural Correlates of Cognitive Load in High-Frequency Environments</h2>
+<div class="flex flex-wrap items-center gap-y-2 gap-x-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="person">person</span>
+<p class="font-label-md text-on-surface">Chen, L., Petrov, V., &amp; Smith, J.A.</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="calendar_today">calendar_today</span>
+<p class="font-label-md text-on-surface-variant">Published Oct 14, 2024</p>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="menu_book">menu_book</span>
+<p class="font-label-md text-on-surface-variant">Nature Neuroscience</p>
+</div>
+</div>
+</section>
+<!-- Summary Sections -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-8 space-y-6">
+<div>
+<h3 class="font-headline-md text-headline-md text-primary mb-4">Executive Summary</h3>
+<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed italic border-l-4 border-secondary-fixed-dim pl-6">
+                            This study investigates the prefrontal cortex activation patterns during complex decision-making tasks in high-frequency trading simulations. By employing high-resolution fMRI and EEG synchronization, the researchers identified a distinct neural "bottleneck" that occurs when information processing exceeds 4.2 bits per second.
+                        </p>
+</div>
+<div class="pt-6 border-t border-outline-variant">
+<h4 class="font-label-md text-label-md text-secondary uppercase tracking-widest mb-4">Key Findings</h4>
+<ul class="space-y-3 font-body-md text-body-md text-on-surface">
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-secondary mt-1" data-icon="check_circle">check_circle</span>
+<span>Linear correlation between theta-band oscillations and subjective cognitive strain in 94% of participants.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-secondary mt-1" data-icon="check_circle">check_circle</span>
+<span>Specific metabolic markers in the dorsolateral prefrontal cortex (dlPFC) predictive of decision fatigue.</span>
+</li>
+<li class="flex items-start gap-3">
+<span class="material-symbols-outlined text-secondary mt-1" data-icon="check_circle">check_circle</span>
+<span>Evidence of "attentional blink" recovery acceleration when auditory feedback is synchronized with alpha rhythms.</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Visual Evidence -->
+<section class="space-y-6">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-headline-md text-primary">Interactive Evidence Suite</h3>
+<div class="flex bg-surface-container-high p-1 rounded-lg">
+<button class="px-4 py-1.5 rounded-md bg-white shadow-sm text-label-sm text-secondary font-bold">Signal Mapping</button>
+<button class="px-4 py-1.5 rounded-md text-label-sm text-on-surface-variant hover:text-primary transition-colors">Regression Analysis</button>
+<button class="px-4 py-1.5 rounded-md text-label-sm text-on-surface-variant hover:text-primary transition-colors">Raw Data Samples</button>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-4 bg-surface-container border border-outline-variant rounded-xl overflow-hidden h-[500px]">
+<!-- Variable Explorer Sidebar -->
+<div class="col-span-3 bg-surface-container-low border-r border-outline-variant p-4 space-y-6">
+<div>
+<p class="font-label-sm text-secondary uppercase tracking-widest mb-3">Variable Explorer</p>
+<div class="space-y-2">
+<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-container-high cursor-pointer transition-colors">
+<input checked="" class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox"/>
+<span class="text-body-sm text-on-surface">BOLD Signal</span>
+</label>
+<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-container-high cursor-pointer transition-colors">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox"/>
+<span class="text-body-sm text-on-surface">Theta-band</span>
+</label>
+<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-container-high cursor-pointer transition-colors">
+<input class="rounded border-outline-variant text-secondary focus:ring-secondary" type="checkbox"/>
+<span class="text-body-sm text-on-surface">Attentional Blink</span>
+</label>
+</div>
+</div>
+<div class="pt-6 border-t border-outline-variant">
+<p class="font-label-sm text-on-surface-variant uppercase tracking-widest mb-3">Analysis Tools</p>
+<div class="flex items-center justify-between p-2">
+<span class="text-body-sm text-on-surface">Comparative Overlay</span>
+<button class="w-10 h-5 bg-secondary rounded-full relative">
+<div class="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div>
+</button>
+</div>
+<p class="text-[11px] text-on-surface-variant px-2 mt-1">Compare against meta-analysis average (n=4.2k)</p>
+</div>
+</div>
+<!-- Main Visualization Area -->
+<div class="col-span-9 relative bg-white group">
+<img class="w-full h-full object-cover opacity-90" data-alt="Interactive 3D brain heatmap visualization with data overlays and coordinate markers." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCJPEQWFPierkH02tcDuYPJ3pSvL3hs-h8h6yW0SBXPX2BVdrnUBBlfWF72Mf6-XzNT04qdgKw8N1jniqHP6QcyL4t7TI1nxqQs3MXWx8hsQycqzvpo2VTOxlll1X3CN-1jFVlamI11Nb8ty7Z8W1isjw7O-gWPUw17XZUUx67SYHaOnWUVWsMYT-DjNFHROI5Q9W6LAb4p0fn7SelEvi8kMy17pMniearbI5besTvw-CjZfr-jDuxlLQ"/>
+<!-- Interactive Overlays -->
+<div class="absolute top-4 right-4 flex flex-col gap-2">
+<button class="p-2 bg-surface/90 backdrop-blur rounded shadow-sm hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">layers</span>
+</button>
+<button class="p-2 bg-surface/90 backdrop-blur rounded shadow-sm hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">download</span>
+</button>
+</div>
+<div class="absolute bottom-4 left-4 right-4 p-4 bg-primary/90 backdrop-blur rounded-lg text-on-primary flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-4">
+<div class="flex flex-col">
+<span class="text-[10px] uppercase opacity-70">Active Region</span>
+<span class="font-label-md">dlPFC (Brodmann Area 9)</span>
+</div>
+<div class="w-[1px] h-8 bg-on-primary/20"></div>
+<div class="flex flex-col">
+<span class="text-[10px] uppercase opacity-70">Signal Intensity</span>
+<span class="font-label-md">+2.4σ</span>
+</div>
+</div>
+<button class="px-4 py-1.5 bg-secondary text-on-secondary rounded font-label-sm">View Raw Trace</button>
+</div>
+</div>
+</div>
+<p class="font-label-sm text-on-surface-variant italic text-center">Interactive Suite v2.4: Real-time neural mapping synchronized with EEG/fMRI telemetry.</p>
+</section>
+<!-- Limitations -->
+<section class="bg-error-container/10 border border-error/20 rounded-xl p-8">
+<div class="flex items-center gap-3 mb-4 text-error">
+<span class="material-symbols-outlined" data-icon="warning">warning</span>
+<h3 class="font-headline-md text-headline-md">Limitations &amp; Warnings</h3>
+</div>
+<div class="grid grid-cols-2 gap-8">
+<div class="space-y-2">
+<p class="font-label-md text-on-error-container">Sterile Environment Constraints</p>
+<p class="font-body-sm text-on-surface-variant">The fMRI chamber environment lacks the multi-sensory distractions typical of real-world high-frequency environments, potentially over-simplifying neural responses.</p>
+</div>
+<div class="space-y-2">
+<p class="font-label-md text-on-error-container">Selection Bias</p>
+<p class="font-body-sm text-on-surface-variant">Participants were recruited primarily from academic and professional backgrounds, which may limit the generalizability of cognitive threshold findings.</p>
+</div>
+</div>
+</section>
+</article>
+<!-- Right Column: Metrics & Actions (4 Columns) -->
+<aside class="col-span-4 space-y-6">
+<!-- Quick Actions Card -->
+<div class="bg-surface border border-outline-variant rounded-xl p-6 shadow-sm flex flex-col gap-3">
+<button class="w-full bg-primary text-on-primary py-3 rounded-lg font-label-md flex items-center justify-center gap-2 hover:bg-on-primary-fixed transition-all">
+<span class="material-symbols-outlined" data-icon="picture_as_pdf">picture_as_pdf</span>
+                        Export PDF Full Text
+                    </button>
+<div class="grid grid-cols-2 gap-3">
+<button class="bg-surface border border-outline-variant text-primary py-2.5 rounded-lg font-label-md flex items-center justify-center gap-2 hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined" data-icon="bookmark">bookmark</span>
+                            Save
+                        </button>
+<button class="bg-surface border border-outline-variant text-primary py-2.5 rounded-lg font-label-md flex items-center justify-center gap-2 hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined" data-icon="format_quote">format_quote</span>
+                            Cite
+                        </button>
+</div>
+</div>
+<!-- Evidence Strength Widget -->
+<div class="bg-primary-container text-on-primary-container rounded-xl p-6 space-y-6">
+<div class="flex justify-between items-start">
+<div>
+<h4 class="font-label-sm text-on-primary-container/70 uppercase tracking-widest mb-1">Evidence Strength</h4>
+<p class="font-headline-xl text-headline-xl text-on-tertiary">88<span class="text-headline-md font-medium">%</span></p>
+</div>
+<div class="w-12 h-12 rounded-full border-2 border-secondary flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary" data-icon="trending_up">trending_up</span>
+</div>
+</div>
+<div class="h-2 w-full bg-on-primary-container/20 rounded-full overflow-hidden">
+<div class="h-full bg-secondary-fixed-dim evidence-gradient w-[88%]"></div>
+</div>
+<div class="space-y-4 pt-2">
+<div class="flex justify-between items-center text-on-tertiary">
+<span class="font-label-sm opacity-80">Sample Size</span>
+<span class="font-label-md font-bold">n = 124</span>
+</div>
+<div class="flex justify-between items-center text-on-tertiary">
+<span class="font-label-sm opacity-80">Study Type</span>
+<span class="font-label-md font-bold">Meta-Analysis</span>
+</div>
+<div class="flex justify-between items-center text-on-tertiary">
+<span class="font-label-sm opacity-80">Journal Impact</span>
+<span class="font-label-md font-bold">Top 1%</span>
+</div>
+</div>
+<p class="text-[11px] leading-tight text-on-primary-container/60 italic text-center">Confidence score derived from peer-review history, citation volume, and methodological disclosure.</p>
+</div>
+<!-- Quality Breakdown -->
+<div class="bg-white border border-outline-variant rounded-xl p-6 space-y-6">
+<h4 class="font-label-md text-label-md text-primary uppercase tracking-widest border-b border-outline-variant pb-2">Research Quality</h4>
+<div class="space-y-5">
+<div class="space-y-2">
+<div class="flex justify-between text-[13px]">
+<span class="font-medium">Methodological Rigor</span>
+<span class="text-secondary font-bold">92/100</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full">
+<div class="h-full bg-secondary w-[92%] rounded-full"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[13px]">
+<span class="font-medium">Sample Diversification</span>
+<span class="text-secondary font-bold">74/100</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full">
+<div class="h-full bg-secondary w-[74%] rounded-full"></div>
+</div>
+</div>
+<div class="space-y-2">
+<div class="flex justify-between text-[13px]">
+<span class="font-medium">Citation Velocity</span>
+<span class="text-secondary font-bold">85/100</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full">
+<div class="h-full bg-secondary w-[85%] rounded-full"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Related Articles -->
+<div class="space-y-4">
+<h4 class="font-label-md text-label-md text-primary uppercase tracking-widest border-b border-outline-variant pb-2">Related Articles</h4>
+<div class="space-y-4">
+<a class="block p-4 border border-outline-variant rounded-lg bg-surface hover:border-secondary transition-all group" href="#">
+<p class="font-label-sm text-secondary mb-1">Cell Reports (2023)</p>
+<h5 class="font-label-md text-on-surface group-hover:text-primary leading-snug">Metabolic Cost of Sustained Attention in Digital Contexts</h5>
+</a>
+<a class="block p-4 border border-outline-variant rounded-lg bg-surface hover:border-secondary transition-all group" href="#">
+<p class="font-label-sm text-secondary mb-1">Journal of Cognitive AI (2024)</p>
+<h5 class="font-label-md text-on-surface group-hover:text-primary leading-snug">Neural Entrainment and Information Transfer Rates</h5>
+</a>
+<a class="block p-4 border border-outline-variant rounded-lg bg-surface hover:border-secondary transition-all group" href="#">
+<p class="font-label-sm text-secondary mb-1">The Lancet (2022)</p>
+<h5 class="font-label-md text-on-surface group-hover:text-primary leading-snug">Stress Biomarkers in High-Velocity Data Analysis Environments</h5>
+</a>
+</div>
+</div>
+</aside>
+</div>
+</main>
+<!-- Interactive Footer Element -->
+<footer class="ml-64 bg-surface-container-low border-t border-outline-variant py-12 px-gutter">
+<div class="max-w-max-width-content mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+<div class="space-y-2">
+<h6 class="font-headline-md text-headline-md text-primary">Research Intelligence</h6>
+<p class="font-body-sm text-on-surface-variant max-w-sm">
+                    Providing computational precision for the global research community. Powered by advanced semantic analysis and rigorous metadata standards.
+                </p>
+</div>
+<div class="flex gap-12">
+<div class="space-y-4">
+<p class="font-label-md text-primary uppercase tracking-widest">Platform</p>
+<ul class="space-y-2 font-body-sm text-on-surface-variant">
+<li><a class="hover:text-secondary transition-colors" href="#">Data Privacy</a></li>
+<li><a class="hover:text-secondary transition-colors" href="#">Methodology</a></li>
+<li><a class="hover:text-secondary transition-colors" href="#">API Access</a></li>
+</ul>
+</div>
+<div class="space-y-4">
+<p class="font-label-md text-primary uppercase tracking-widest">Support</p>
+<ul class="space-y-2 font-body-sm text-on-surface-variant">
+<li><a class="hover:text-secondary transition-colors" href="#">Help Center</a></li>
+<li><a class="hover:text-secondary transition-colors" href="#">Community</a></li>
+<li><a class="hover:text-secondary transition-colors" href="#">Institutions</a></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="mt-12 text-center text-[12px] text-outline">
+            © 2024 Research Intelligence Global. All citations protected by CC BY-NC 4.0.
+        </div>
+</footer>
+<script>
+        // Micro-interaction for Evidence Strength Widget
+        document.addEventListener('DOMContentLoaded', () => {
+            const confidenceBar = document.querySelector('.evidence-gradient');
+            if(confidenceBar) {
+                confidenceBar.style.width = '0%';
+                setTimeout(() => {
+                    confidenceBar.style.transition = 'width 1.5s cubic-bezier(0.65, 0, 0.35, 1)';
+                    confidenceBar.style.width = '88%';
+                }, 300);
+            }
+
+            // Hover effect for research cards
+            const cards = document.querySelectorAll('section, .bg-surface-container-lowest');
+            cards.forEach(card => {
+                card.addEventListener('mouseenter', () => {
+                    card.classList.add('shadow-md');
+                });
+                card.addEventListener('mouseleave', () => {
+                    card.classList.remove('shadow-md');
+                });
+            });
+        });
+    </script>
+</body></html>

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Athena | Research Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Source+Serif+4:ital,wght@0,400;0,600;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#565e74",
+                    "on-primary-container": "#7c839b",
+                    "secondary-fixed-dim": "#6bd8cb",
+                    "on-tertiary-fixed-variant": "#38485d",
+                    "on-secondary-fixed": "#00201d",
+                    "on-secondary": "#ffffff",
+                    "on-background": "#191c1e",
+                    "surface-bright": "#f7f9fb",
+                    "on-tertiary-container": "#75859d",
+                    "on-primary-fixed-variant": "#3f465c",
+                    "on-surface-variant": "#45464d",
+                    "surface-container-low": "#f2f4f6",
+                    "background": "#f7f9fb",
+                    "error": "#ba1a1a",
+                    "tertiary-fixed": "#d3e4fe",
+                    "surface-container-low": "#f2f4f6",
+                    "tertiary": "#000000",
+                    "on-error-container": "#93000a",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#b7c8e1",
+                    "surface": "#f7f9fb",
+                    "outline": "#76777d",
+                    "on-surface": "#191c1e",
+                    "inverse-surface": "#2d3133",
+                    "surface-variant": "#e0e3e5",
+                    "surface-container-highest": "#e0e3e5",
+                    "on-primary-fixed": "#131b2e",
+                    "on-tertiary-fixed": "#0b1c30",
+                    "outline-variant": "#c6c6cd",
+                    "on-secondary-fixed-variant": "#005049",
+                    "primary-fixed": "#dae2fd",
+                    "inverse-on-surface": "#eff1f3",
+                    "surface-container": "#eceef0",
+                    "primary-container": "#131b2e",
+                    "primary-fixed-dim": "#bec6e0",
+                    "on-secondary-container": "#006f66",
+                    "error-container": "#ffdad6",
+                    "on-primary": "#ffffff",
+                    "primary": "#000000",
+                    "secondary-fixed": "#89f5e7",
+                    "secondary": "#006a61",
+                    "inverse-primary": "#bec6e0",
+                    "tertiary-container": "#0b1c30",
+                    "on-error": "#ffffff",
+                    "surface-dim": "#d8dadc",
+                    "on-tertiary": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "unit": "4px",
+                    "max-width-content": "1200px",
+                    "margin-mobile": "16px",
+                    "margin-desktop": "48px",
+                    "gutter": "24px"
+            },
+            "fontFamily": {
+                    "headline-xl": ["Inter"],
+                    "headline-lg": ["Inter"],
+                    "label-sm": ["Inter"],
+                    "label-md": ["Inter"],
+                    "headline-lg-mobile": ["Inter"],
+                    "body-sm": ["Inter"],
+                    "headline-md": ["Inter"],
+                    "body-md": ["\"Source Serif 4\""],
+                    "body-lg": ["\"Source Serif 4\""]
+            },
+            "fontSize": {
+                    "headline-xl": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-sm": ["12px", {"lineHeight": "14px", "fontWeight": "500"}],
+                    "label-md": ["14px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "26px", "fontWeight": "400"}],
+                    "body-lg": ["18px", {"lineHeight": "30px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+        }
+        .active-dot {
+            width: 4px;
+            height: 4px;
+            background-color: #006a61;
+            border-radius: 50%;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body-sm antialiased">
+<!-- Sidebar Navigation (SideNavBar) -->
+<aside class="bg-tertiary-container h-screen w-64 fixed left-0 top-0 flex flex-col h-full py-8 px-4 z-50">
+<div class="mb-10 px-2">
+<h1 class="font-headline-md text-headline-md font-bold text-on-tertiary-fixed">Athena</h1>
+<p class="font-label-sm text-label-sm text-on-tertiary-fixed-variant opacity-70">Research Intelligence</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Dashboard -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span>Dashboard</span>
+</a>
+<!-- Search -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+<span>Search</span>
+</a>
+<!-- Interests -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="interests">interests</span>
+<span>Interests</span>
+</a>
+<!-- Comparisons -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="compare_arrows">compare_arrows</span>
+<span>Comparisons</span>
+</a>
+<!-- Saved Searches -->
+<a class="flex items-center gap-3 px-3 py-2 text-on-tertiary-fixed-variant hover:text-on-tertiary-fixed hover:bg-on-tertiary-container/10 transition-colors duration-200 ease-in-out font-label-md text-label-md" href="#">
+<span class="material-symbols-outlined" data-icon="save">save</span>
+<span>Saved Searches</span>
+</a>
+<!-- Bookmarks (Active) -->
+<a class="bg-secondary text-on-secondary rounded-lg flex items-center gap-3 px-3 py-2 transition-colors duration-200 ease-in-out font-label-md text-label-md shadow-sm" href="#">
+<span class="material-symbols-outlined" data-icon="bookmarks" style="font-variation-settings: 'FILL' 1;">bookmarks</span>
+<span>Bookmarks</span>
+</a>
+</nav>
+<!-- User Profile Anchor -->
+<div class="mt-auto flex items-center gap-3 px-2 py-4 border-t border-on-tertiary-container/20">
+<div class="w-10 h-10 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed font-bold">
+                JD
+            </div>
+<div class="overflow-hidden">
+<p class="font-label-md text-label-md text-on-tertiary-fixed truncate">Dr. J. Doe</p>
+<p class="font-label-sm text-label-sm text-on-tertiary-fixed-variant truncate">Academic Authority</p>
+</div>
+</div>
+</aside>
+<!-- Top Navigation Bar -->
+<header class="bg-surface sticky top-0 ml-64 w-[calc(100%-16rem)] flex justify-between items-center h-16 px-gutter z-40 border-b border-outline-variant">
+<div class="flex items-center flex-1 max-w-xl">
+<div class="relative w-full group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-body-sm" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-body-sm focus:ring-2 focus:ring-secondary transition-all outline-none" placeholder="Search bookmarked research..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4 text-primary">
+<button class="p-2 hover:text-primary transition-colors duration-200">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 hover:text-primary transition-colors duration-200">
+<span class="material-symbols-outlined" data-icon="help_outline">help_outline</span>
+</button>
+<button class="p-2 hover:text-primary transition-colors duration-200">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Filter Sub-nav -->
+<div class="bg-surface-container-low sticky top-16 ml-64 w-[calc(100%-16rem)] flex items-center justify-between h-12 px-gutter z-30 shadow-sm border-b border-outline-variant">
+<div class="flex items-center gap-6">
+<button class="text-primary font-bold bg-white px-3 py-1 rounded-full border border-outline-variant text-label-sm shadow-sm">All Bookmarks</button>
+<button class="text-on-surface-variant hover:bg-surface-container-high px-3 py-1 rounded-full text-label-sm transition-all">Population</button>
+<button class="text-on-surface-variant hover:bg-surface-container-high px-3 py-1 rounded-full text-label-sm transition-all">Study Type</button>
+<button class="text-on-surface-variant hover:bg-surface-container-high px-3 py-1 rounded-full text-label-sm transition-all">Date Range</button>
+</div>
+<div class="flex items-center gap-4">
+<button class="flex items-center gap-2 text-label-sm text-secondary font-bold hover:bg-white hover:shadow-sm px-3 py-1 rounded-lg transition-all active:scale-95">
+<span class="material-symbols-outlined text-[18px]" data-icon="checklist">checklist</span>
+                Bulk Select
+            </button>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-lg text-label-sm font-bold hover:opacity-90 active:scale-95 transition-all">
+                Apply Filters
+            </button>
+</div>
+</div>
+<!-- Main Content Grid -->
+<main class="ml-64 p-8 max-w-[1440px] flex gap-8">
+<!-- Left: Collections Sidebar -->
+<aside class="w-64 shrink-0">
+<div class="mb-6 flex justify-between items-center">
+<h3 class="font-label-md text-label-md text-on-surface font-bold uppercase tracking-wider">Collections</h3>
+<button class="text-secondary hover:bg-secondary/10 p-1 rounded transition-colors">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+</button>
+</div>
+<div class="space-y-1">
+<button class="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-outline-variant rounded-lg shadow-sm text-left group">
+<span class="font-label-md text-label-md font-bold text-primary">Neuroscience 2024</span>
+<span class="text-label-sm text-on-surface-variant bg-surface-container-high px-1.5 rounded">24</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-surface-container-low rounded-lg text-left group transition-all">
+<span class="font-label-md text-label-md text-on-surface-variant group-hover:text-primary">Cognitive Load Theory</span>
+<span class="text-label-sm text-on-surface-variant bg-surface-container-low px-1.5 rounded">12</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-surface-container-low rounded-lg text-left group transition-all">
+<span class="font-label-md text-label-md text-on-surface-variant group-hover:text-primary">Global Health Policy</span>
+<span class="text-label-sm text-on-surface-variant bg-surface-container-low px-1.5 rounded">48</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-surface-container-low rounded-lg text-left group transition-all">
+<span class="font-label-md text-label-md text-on-surface-variant group-hover:text-primary">Urban Heat Effects</span>
+<span class="text-label-sm text-on-surface-variant bg-surface-container-low px-1.5 rounded">07</span>
+</button>
+</div>
+<div class="mt-12">
+<h3 class="font-label-md text-label-md text-on-surface font-bold uppercase tracking-wider mb-4">Quick Stats</h3>
+<div class="bg-surface-container-low p-4 rounded-xl border border-outline-variant/30">
+<div class="mb-4">
+<p class="text-label-sm text-on-surface-variant">Average Confidence</p>
+<p class="font-headline-md text-headline-md text-secondary">82%</p>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant">Papers Saved (30d)</p>
+<p class="font-headline-md text-headline-md text-primary">142</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Right: Research Cards -->
+<section class="flex-1 space-y-6">
+<!-- Article Card 1 -->
+<article class="bg-white border border-outline-variant p-6 rounded-lg hover:shadow-md transition-all group relative">
+<div class="absolute top-4 right-4 flex gap-2">
+<button class="p-2 text-on-surface-variant hover:text-secondary hover:bg-secondary/5 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+<button class="p-2 text-secondary bg-secondary/10 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="bookmark" style="font-variation-settings: 'FILL' 1;">bookmark</span>
+</button>
+</div>
+<div class="flex gap-6">
+<div class="w-48 h-64 shrink-0 bg-surface-container-low overflow-hidden rounded border border-outline-variant shadow-sm relative">
+<img class="w-full h-full object-cover opacity-90" data-alt="A detailed digital rendering of a scientific journal cover for a medical research paper. The cover features minimalist abstract patterns in deep teal and slate grey. A clear 'The Lancet' branding is visible at the top. The image is professionally lit with a clean, high-contrast studio feel, emphasizing academic authority and high-density information." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUK1BeJyMQUc03Wg4i5fzfcMvS5e2GzFuujm0JdGoMDqxFyiMxiTNswem-xHBPP_ssRVzZUEmr48spVyY5nkaP_XYVEZ6RYqxXKVu6i3lmVm9SRKQIJiBYefnpIKy0CBZa1FjG3ZOGnFftzS4dwss-atiWzeqqKlfe-VebGCcNVlZIzhvooJolQwGZrLM0oU2IvhyhUosieb26eMjsKhpf94XdCAdXbW-stzFJuu9GY6jFFBIy19rtEA"/>
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+<span class="material-symbols-outlined text-[64px]" data-icon="description">description</span>
+</div>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="mb-2">
+<span class="bg-secondary-container text-on-secondary-container text-label-sm px-2 py-0.5 rounded font-bold">Meta-Analysis</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2 leading-tight">Neural correlates of focus-state in high-pressure analytical environments</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 line-clamp-3">This paper explores the neurobiological foundations of sustained cognitive performance among quantitative analysts. Utilizing fMRI data from over 2,000 subjects, the research identifies a specific oscillatory pattern in the prefrontal cortex associated with error-correction and 'flow state' maintenance.</p>
+<!-- Metadata Grid -->
+<div class="grid grid-cols-3 gap-8 mt-auto py-4 border-y border-outline-variant/30">
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Evidence Strength</p>
+<div class="flex items-center gap-1.5 mt-1">
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-surface-variant rounded-full"></div>
+<span class="text-label-sm font-bold text-secondary ml-2">High</span>
+</div>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Journal Impact</p>
+<p class="text-label-md font-bold text-primary mt-1">Q1 (IF: 14.8)</p>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Date Saved</p>
+<p class="text-label-md font-bold text-primary mt-1">Oct 12, 2024</p>
+</div>
+</div>
+<div class="mt-6 flex items-center gap-4">
+<button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-sm">
+<span class="material-symbols-outlined text-[18px]" data-icon="auto_fix">auto_fix</span>
+                                Synthesize
+                            </button>
+<button class="border border-outline text-primary px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="compare">compare</span>
+                                Compare
+                            </button>
+<button class="ml-auto text-on-surface-variant hover:underline text-label-md">View Citations (84)</button>
+</div>
+</div>
+</div>
+</article>
+<!-- Article Card 2 -->
+<article class="bg-white border border-outline-variant p-6 rounded-lg hover:shadow-md transition-all group relative">
+<div class="absolute top-4 right-4 flex gap-2">
+<button class="p-2 text-on-surface-variant hover:text-secondary hover:bg-secondary/5 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="share">share</span>
+</button>
+<button class="p-2 text-secondary bg-secondary/10 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="bookmark" style="font-variation-settings: 'FILL' 1;">bookmark</span>
+</button>
+</div>
+<div class="flex gap-6">
+<div class="w-48 h-64 shrink-0 bg-surface-container-low overflow-hidden rounded border border-outline-variant shadow-sm relative">
+<img class="w-full h-full object-cover opacity-90" data-alt="A high-quality academic journal cover mockup. The design is sleek and modern, featuring an artistic representation of urban data flows using microscopic glowing lines. The typography is elegant serif for the title and bold sans-serif for the masthead. The color palette is dominated by ivory and deep charcoal with a splash of electric teal." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBglOylVOaybUKDC99dGhJ7bmEWcx2mp8VKfmupj8uTU5XPmKUU_MsgdEFg5CR0VWap3wte8u5qb253vzgXtIgLaAdPszhwhJZhesaC1pTqD2xmPUggggPG7Gam42TounHxe2rkR-zMCPdxMcLh5-JNqv-SEjGAgONPKkkC02Dy_-hc0JOkT7Nx-Xb5rWGMTb26R5gBuByurVmf5PhO985tpM30i1bycOVxRV9qSck0vNPc1oM3ztTHcQ"/>
+</div>
+<div class="flex-1 flex flex-col">
+<div class="mb-2">
+<span class="bg-surface-variant text-on-surface-variant text-label-sm px-2 py-0.5 rounded font-bold">Randomized Controlled Trial</span>
+</div>
+<h2 class="font-headline-md text-headline-md text-primary mb-2 leading-tight">Economic implications of AI-driven literature reviews in policy drafting</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 line-clamp-3">A double-blind study comparing human-only vs. human-AI hybrid teams in the creation of comprehensive health policy white papers. Findings indicate a 40% reduction in production time with non-significant differences in accuracy.</p>
+<!-- Metadata Grid -->
+<div class="grid grid-cols-3 gap-8 mt-auto py-4 border-y border-outline-variant/30">
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Evidence Strength</p>
+<div class="flex items-center gap-1.5 mt-1">
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-secondary rounded-full"></div>
+<div class="h-1.5 flex-1 bg-surface-variant rounded-full"></div>
+<div class="h-1.5 flex-1 bg-surface-variant rounded-full"></div>
+<span class="text-label-sm font-bold text-on-surface-variant ml-2">Mod</span>
+</div>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Journal Impact</p>
+<p class="text-label-md font-bold text-primary mt-1">Q2 (IF: 6.2)</p>
+</div>
+<div>
+<p class="text-label-sm text-on-surface-variant uppercase tracking-wide">Date Saved</p>
+<p class="text-label-md font-bold text-primary mt-1">Oct 11, 2024</p>
+</div>
+</div>
+<div class="mt-6 flex items-center gap-4">
+<button class="bg-primary text-on-primary px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-primary/90 transition-all shadow-sm">
+<span class="material-symbols-outlined text-[18px]" data-icon="auto_fix">auto_fix</span>
+                                Synthesize
+                            </button>
+<button class="border border-outline text-primary px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-surface-container-low transition-all">
+<span class="material-symbols-outlined text-[18px]" data-icon="compare">compare</span>
+                                Compare
+                            </button>
+<button class="ml-auto text-on-surface-variant hover:underline text-label-md">View Citations (12)</button>
+</div>
+</div>
+</div>
+</article>
+</section>
+</main>
+<!-- Floating Action Button (Contextual) -->
+<button class="fixed bottom-8 right-8 bg-secondary text-on-secondary h-14 px-6 rounded-full flex items-center gap-3 shadow-xl hover:scale-105 active:scale-95 transition-all z-50">
+<span class="material-symbols-outlined" data-icon="bolt">bolt</span>
+<span class="font-bold text-label-md">Analyze Collection</span>
+</button>
+<!-- Micro-interaction Script -->
+<script>
+        document.querySelectorAll('article').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                card.classList.add('border-secondary');
+            });
+            card.addEventListener('mouseleave', () => {
+                card.classList.remove('border-secondary');
+            });
+        });
+
+        // Simple mock for "Bulk Select" mode toggle
+        let bulkMode = false;
+        const bulkButton = document.querySelector('button:has([data-icon="checklist"])');
+        
+        bulkButton.addEventListener('click', () => {
+            bulkMode = !bulkMode;
+            if(bulkMode) {
+                bulkButton.classList.add('bg-secondary-container', 'text-on-secondary-container');
+                document.querySelectorAll('article').forEach(card => {
+                    const checkbox = document.createElement('div');
+                    checkbox.className = 'absolute top-4 left-4 w-6 h-6 border-2 border-outline rounded bg-white flex items-center justify-center z-20 transition-all cursor-pointer bulk-checkbox';
+                    checkbox.innerHTML = '<span class="material-symbols-outlined text-white text-[18px] select-none">check</span>';
+                    card.prepend(checkbox);
+                    
+                    checkbox.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        checkbox.classList.toggle('bg-secondary');
+                        checkbox.classList.toggle('border-secondary');
+                    });
+                });
+            } else {
+                bulkButton.classList.remove('bg-secondary-container', 'text-on-secondary-container');
+                document.querySelectorAll('.bulk-checkbox').forEach(cb => cb.remove());
+            }
+        });
+    </script>
+</body></html>
