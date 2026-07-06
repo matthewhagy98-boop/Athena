@@ -1,5 +1,8 @@
 import { render, screen } from "@testing-library/react";
+import { beforeEach } from "vitest";
 import App from "./App";
+
+beforeEach(() => localStorage.setItem("athena_user_id", "00000000-0000-0000-0000-000000000001"));
 
 test("renders icon sidebar with the three nav destinations", () => {
   render(<App />);
