@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { SearchParams } from "../api/types";
 import type { TopicRef } from "../api/types";
 
@@ -24,6 +24,10 @@ export function FilterSidebar({
   onApply: (params: SearchParams) => void;
 }) {
   const [draft, setDraft] = useState<SearchParams>(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
 
   function set<K extends keyof SearchParams>(key: K, v: SearchParams[K]) {
     setDraft((d) => ({ ...d, [key]: v || undefined }));

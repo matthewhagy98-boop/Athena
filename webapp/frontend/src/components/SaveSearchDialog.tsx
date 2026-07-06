@@ -14,9 +14,9 @@ export function SaveSearchDialog({
   const [name, setName] = useState("");
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-primary-container/40">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-primary-container/40" role="dialog" aria-modal="true" aria-labelledby="save-search-title">
       <div className="w-80 rounded-lg border border-hairline bg-surface-container-lowest p-5">
-        <p className="mb-3 text-sm font-semibold">Save this search</p>
+        <p id="save-search-title" className="mb-3 text-sm font-semibold">Save this search</p>
         <label className="mb-1 block text-xs font-medium text-on-surface-variant" htmlFor="save-search-name">Name</label>
         <input
           id="save-search-name"

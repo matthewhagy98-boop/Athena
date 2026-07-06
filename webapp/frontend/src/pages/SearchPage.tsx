@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useCreateSavedSearch, useSearch, useTopics } from "../api/hooks";
 import type { SearchParams } from "../api/types";
@@ -27,6 +27,10 @@ export function SearchPage() {
   const [saveOpen, setSaveOpen] = useState(false);
   const navigate = useNavigate();
   const { userId, error: identityError } = useIdentity();
+
+  useEffect(() => {
+    setQueryDraft(params.q ?? "");
+  }, [params.q]);
 
   const { data, isLoading, isError } = useSearch(params);
   const { data: topics } = useTopics();
@@ -72,6 +76,7 @@ export function SearchPage() {
           <input
             className="flex-1 rounded border border-hairline bg-surface-container-lowest px-3 py-2 text-sm"
             placeholder="Search papers"
+            aria-label="Search papers"
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
           />
