@@ -56,7 +56,7 @@ def _paper_out(row, topics_by_paper: dict) -> dict:
         },
         "score": {
             "evidence_tier": row.score.evidence_tier.value,
-            "study_type": row.score.study_type.value,
+            "study_type": row.score.study_type.value if row.score.study_type else None,
             "final_score": row.score.final_score,
         }
         if row.score
