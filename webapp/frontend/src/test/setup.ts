@@ -17,8 +17,13 @@ if (typeof globalThis.localStorage === "undefined") {
     clear: () => {
       Object.keys(store).forEach((key) => delete store[key]);
     },
-    length: 0,
-    key: () => null,
+    get length() {
+      return Object.keys(store).length;
+    },
+    key: (index: number) => {
+      const keys = Object.keys(store);
+      return index >= 0 && index < keys.length ? keys[index] : null;
+    },
   } as Storage;
 }
 
