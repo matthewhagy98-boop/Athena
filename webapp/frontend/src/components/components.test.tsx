@@ -49,3 +49,18 @@ test("CompareTray hides at zero and fires onCompare", () => {
   fireEvent.click(screen.getByRole("button", { name: /compare \(2\)/i }));
   expect(onCompare).toHaveBeenCalled();
 });
+
+test("ResearchCard with null score renders no badge or evidence bar", () => {
+  const nullScoreRow: PaperRow = {
+    paper: { id: "p2", title: "Unscored paper", abstract: null, pub_date: null },
+    score: null,
+    topics: [],
+  };
+  render(
+    <MemoryRouter>
+      <ResearchCard row={nullScoreRow} checked={false} onToggleSelect={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByText("Unscored paper")).toBeInTheDocument();
+  expect(screen.queryByLabelText(/evidence strength/i)).not.toBeInTheDocument();
+});

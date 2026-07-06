@@ -28,7 +28,7 @@ export function IconSidebar() {
             }`
           }
         >
-          <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{item.icon}</span>
         </NavLink>
       ))}
     </nav>
