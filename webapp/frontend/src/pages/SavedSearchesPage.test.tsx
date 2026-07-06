@@ -60,3 +60,13 @@ test("delete asks for confirmation and calls the API", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
   await waitFor(() => expect(deleted).toBe(true));
 });
+
+test("shows an error message when run fails", async () => {
+  server.use(
+    http.get("/saved-searches", () => HttpResponse.json(saved)),
+    http.post("/saved-searches/s1/run", () => HttpResponse.text("boom", { status: 500 })),
+  );
+  renderPage();
+  fireEvent.click(await screen.findByRole("button", { name: /run/i }));
+  await waitFor(() => expect(screen.getByText(/couldn't run that search/i)).toBeInTheDocument());
+});

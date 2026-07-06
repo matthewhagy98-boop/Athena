@@ -43,6 +43,11 @@ export function SavedSearchesPage() {
           Couldn't set up your anonymous profile — saved searches are unavailable.
         </p>
       )}
+      {(runSearch.isError || deleteSearch.isError) && (
+        <p className="mb-4 rounded border border-error/40 bg-surface-container-lowest p-2 text-xs text-error">
+          {runSearch.isError ? "Couldn't run that search. Try again." : "Couldn't delete that search. Try again."}
+        </p>
+      )}
       {isLoading && userId !== null && <p className="text-sm text-on-surface-variant">Loading…</p>}
       {data?.length === 0 && (
         <p className="rounded-lg border border-dashed border-outline-variant p-4 font-serif text-sm text-on-surface-variant">
