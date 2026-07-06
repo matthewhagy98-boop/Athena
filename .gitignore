@@ -7,3 +7,5 @@ __pycache__/
 .superpowers/
 .claude/
 .DS_Store
+node_modules/
+webapp/frontend/dist/

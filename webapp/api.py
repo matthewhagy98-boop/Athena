@@ -204,3 +204,12 @@ def timeline_endpoint(
     return [
         {"bucket_date": b.bucket_date.isoformat(), "event_type": b.event_type.value, "count": b.count} for b in buckets
     ]
+
+
+from pathlib import Path
+
+from fastapi.staticfiles import StaticFiles
+
+_FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
