@@ -104,7 +104,7 @@ export function TopicDetailPage() {
               <tr key={row.paper.id} className="border-b border-surface-container-low">
                 <td className="p-3 font-medium text-primary-container">{row.paper.title}</td>
                 <td className="p-3">{row.score?.evidence_tier ?? "pending"}</td>
-                <td className="p-3">{row.score?.study_type.replace(/_/g, " ") ?? "—"}</td>
+                <td className="p-3">{row.score?.study_type?.replace(/_/g, " ") ?? "—"}</td>
                 <td className="p-3">{row.paper.pub_date ?? "—"}</td>
               </tr>
             ))}

@@ -63,3 +63,26 @@ test("add to compare links to the compare page with this topic", async () => {
   const link = await screen.findByRole("link", { name: /add to compare/i });
   expect(link).toHaveAttribute("href", "/compare?topic_ids=t1");
 });
+
+test("renders paper with null study_type without crashing", async () => {
+  server.use(
+    http.get("/search", () =>
+      HttpResponse.json({
+        rows: [
+          {
+            paper: { id: "p2", title: "Paper with null study type", abstract: null, pub_date: "2026-05-15" },
+            score: { evidence_tier: "established", study_type: null as unknown as string, final_score: 70 },
+            topics: [{ id: "t1", canonical_label: "Cognitive mapping" }],
+          },
+        ],
+        total: 1,
+        page: 1,
+        page_size: 50,
+      }),
+    ),
+  );
+  renderPage();
+  await waitFor(() => expect(screen.getByText("Paper with null study type")).toBeInTheDocument());
+  // Verify the table renders without crashing and shows em-dash for null study_type
+  expect(screen.getByText("—")).toBeInTheDocument();
+});
