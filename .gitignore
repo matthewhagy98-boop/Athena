@@ -7,3 +7,4 @@ __pycache__/
 .superpowers/
 .claude/
 .DS_Store
+.worktrees/
