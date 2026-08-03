@@ -201,13 +201,14 @@ Every blocking or near-blocking open question from the five documents, consolida
 
 | ID | Decision | Blocks | Recommendation | Decision-maker |
 |---|---|---|---|---|
-| **D-1** (OQ-C-001) | How anonymous users acquire an `InterestProfile` without breaking the digest runner | **All of C's personalization** | Harden `digest/runner.py:38` so `get_delivery_preference` cannot raise out of `select_due_users`, then lazily create the profile. Add a regression test that fails against today's code. | Repository owner |
+| ~~**D-1** (OQ-C-001)~~ **RESOLVED 2026-08-03, commit `a5a4117`** | How anonymous users acquire an `InterestProfile` without breaking the digest runner | ~~All of C's personalization~~ — **C is unblocked** | Done: both `list_interests` and `get_delivery_preference` now sit inside `select_due_users`' `try`, so a profile-less user is skipped and logged. Two regression tests added, confirmed RED before and GREEN after. The defect proved **live rather than latent** — sub-project A's anonymous users already triggered it, and six digest tests were failing on `main`. | Repository owner — decided |
 | **D-2** (OQ-E-001) | Whether E ships before individual-user authentication, and which parts | **E3, E4, and `DELETE /me`** | Ship E1 and E2 now; defer E3, E4, and account deletion until authentication exists. Explicitly reject shipping all of E on the current model. | Repository owner |
 | **D-3** (OQ-E-006) | Where email-verification state lives | **E4 entirely** | Authentication owns it; E4 treats it as a precondition rather than defining it. | Repository owner + authentication designer |
 | **D-4** (OQ-D-003) | Whether the citation refresh job requires a Semantic Scholar API key | D's weekly-coverage goal | Require the key when tracking is enabled; fail fast at startup rather than under-delivering coverage silently. | Repository owner (controls deployment env) |
 | **D-5** (OQ-C-004, elevated) | Where the shared rate limiter lives | Consistency across B, C, D, E, F | Build one `rate_windows` table with a `scope` column in the first sub-project to ship; others add a scope value. See §4. | Whoever sequences B and C |
 | **D-6** (OQ-F-001) | Whether Athena extracts effect sizes, enabling true meta-analysis | Nothing in F's v1 | Do not, for now. If ever pursued, it is a separate sub-project with a clinical reviewer and a golden-set evaluation — **not** an incremental extension of F. | Repository owner, with clinical input |
 | **D-7** (OQ-B-003) | Whether `call_forced_tool` is changed to return token usage | B's cost accounting only | Add a parallel `call_forced_tool_with_usage` used only by `synthesis/`, leaving the four existing call sites untouched. | Repository owner |
+| **D-8** (new, 2026-08-03) | How to restore a green backend test baseline — 17 tests fail on `main` from committed state leaking into the shared dev Postgres | **TDD reliability for B, C, D, E, and F.** Not a product defect; a workflow blocker | Three options, in ascending cost. **(a)** Add an autouse fixture that truncates the leak-prone tables (`users`, `search_index_sync_state`, `paper_search_index`) before each test — smallest change, keeps one database. **(b)** Point `pytest` at a dedicated test database created and dropped per session — strongest isolation, needs a second `DATABASE_URL` and CI wiring. **(c)** Make the API's `get_db` non-committing under test via a dependency override in `tests/webapp/`, plus a one-off cleanup of existing rows — fixes the source but not the residue already present. Recommend **(a)** now and **(b)** when CI is set up. | Repository owner |
 | **D-8** (OQ-B-004 / OQ-D-005 / OQ-F-005) | Whether the enterprise API exposes synthesis, velocity, or analysis | Nothing in v1 | No, for all three, consistently. Each is purely additive later; exposing compute-heavy endpoints under a request-count quota is a quota-model decision. | Product owner |
 
 **D-1 and D-2 must be answered before their sub-projects begin.** The remaining six have recommendations that allow work to proceed.
@@ -218,7 +219,8 @@ The other eighteen open questions are genuine but non-blocking design choices �
 
 | Risk | Probability | Impact | Mitigation | Affected sub-projects |
 |---|---|---|---|---|
-| **R-1**: Creating an `InterestProfile` for an anonymous user makes `select_due_users` raise uncaught at `digest/runner.py:38`, aborting the weekly digest for **every** user | High if unaddressed — it is the natural implementation | Critical — silent platform-wide digest failure triggered by one visitor adding a topic | Resolve D-1 before any C work; add the regression test first and confirm it fails against current code | C |
+| ~~**R-1**~~ **CLOSED 2026-08-03, commit `a5a4117`**: `select_due_users` raised uncaught for any user missing an `InterestProfile` or `DeliveryPreference`, aborting the weekly digest for **every** user | Was **already occurring** — not a future risk. Sub-project A's `POST /users/anonymous` created 8 such users in the dev database and 6 digest tests were failing on `main` | Critical — silent platform-wide digest failure | Fixed: both lookups guarded inside the existing `try`. Two regression tests added, RED before / GREEN after | C (and A, which was the actual trigger) |
+| **R-1b** (new, open): 17 backend tests still fail on `main` because the suite shares one dev Postgres and code paths that **commit** (the API's `get_db`, seed scripts) leave rows the rollback-based `db_session` fixture never removes. A committed `SearchIndexSyncState` watermark at `2026-08-02 01:44:36` blocks the search-index tests from indexing their own fixtures | Certain — currently occurring | Medium — no production impact, but a permanently red baseline makes TDD unreliable for every future sub-project, since an implementer cannot distinguish their RED from ambient noise | Unresolved; see D-8 below | B, C, D, E, F — all of them |
 | **R-2**: Sharing or alerts ship on unverified `user_id`, enabling mail attributable to a victim or destruction of another user's data | Medium — it is the path of least resistance | Critical for `DELETE /me`; high for alerts and sharing | Resolve D-2 in writing; keep the four E flags separate so each capability is independently gateable | E |
 | **R-3**: Citation velocity ships before enough history accumulates, so nearly every paper shows "not enough history" and the feature reads as broken | High if D is built in one pass | Medium — reputational, recoverable by waiting | Split D across positions 1 and 5 of the execution order; separate `CITATION_TRACKING_ENABLED` from `CITATION_UI_ENABLED` | D |
 | **R-4**: An LLM cost spike from synthesis generation goes unnoticed | Medium — no cost monitoring exists | Medium — financial | 20/hour/user cap, 10-member cap, 1200-token cap, content-addressed caching, `SYNTHESIS_ENABLED` kill switch requiring no deploy | B |
@@ -260,11 +262,13 @@ The other eighteen open questions are genuine but non-blocking design choices �
 
 All five open questions have recommendations, none blocking. Every dependency is present and verified: the forced-tool LLM client (`evidence_engine/llm/client.py:12`), the consensus data it reads (`evidence_engine/db/models.py:98`), and the two frontend pages it extends. Its schema is additive and its feature flag gives an instant kill switch. The only judgment call an implementer must make — Playwright LLM stubbing (OQ-B-002) — has a recommended approach requiring no production code branch.
 
-### C — Trending and dashboard: **NEEDS USER DECISION**
+### C — Trending and dashboard: **READY FOR IMPLEMENTATION PLAN** (upgraded 2026-08-03)
 
-Blocked on D-1 (OQ-C-001). This is not a preference question: the natural implementation makes `select_due_users` raise uncaught at `digest/runner.py:38`, aborting weekly digest delivery for every user on the platform the moment one anonymous visitor adds an interest. The fix is small, but it must be chosen deliberately and proven with a regression test that fails against current code.
+Previously NEEDS USER DECISION, blocked on D-1. **D-1 is resolved** in commit `a5a4117`: `select_due_users` now guards both profile lookups, so C may create an `InterestProfile` for an anonymous user without endangering digest delivery. The two regression tests the original entry demanded exist and were confirmed to fail against pre-fix code.
 
-Everything else in C is ready — the trend formula, thresholds, snapshot model, and job pattern are fully specified. Once D-1 is answered, C moves directly to READY.
+Investigating D-1 also corrected the record. The defect was not the latent, C-triggered hazard this roadmap first described — it was **already live**, caused by sub-project A, and was the reason six digest tests failed on `main`. The corresponding citations in the C document have been fixed.
+
+Everything else in C was already specified: the trend formula, thresholds, snapshot model, and job pattern. C now carries no blocking open question. Its remaining questions (OQ-C-002 through OQ-C-005) all have recommendations and none gate a plan.
 
 ### D — Citation velocity: **READY FOR IMPLEMENTATION PLAN**, with a sequencing caveat
 
@@ -292,7 +296,7 @@ One caveat for whoever writes the plan: F's most important requirements are **ne
 | Sub-project | Readiness | Gate |
 |---|---|---|
 | B | READY FOR IMPLEMENTATION PLAN | — |
-| C | NEEDS USER DECISION | D-1 (digest runner hazard) |
+| C | READY FOR IMPLEMENTATION PLAN | ~~D-1~~ resolved 2026-08-03 (`a5a4117`) |
 | D | READY FOR IMPLEMENTATION PLAN | Split into collection and UI plans |
 | E1 | READY FOR IMPLEMENTATION PLAN | — |
 | E2 | READY FOR IMPLEMENTATION PLAN | — |
