@@ -202,8 +202,8 @@ Every blocking or near-blocking open question from the five documents, consolida
 | ID | Decision | Blocks | Recommendation | Decision-maker |
 |---|---|---|---|---|
 | ~~**D-1** (OQ-C-001)~~ **RESOLVED 2026-08-03, commit `a5a4117`** | How anonymous users acquire an `InterestProfile` without breaking the digest runner | ~~All of C's personalization~~ — **C is unblocked** | Done: both `list_interests` and `get_delivery_preference` now sit inside `select_due_users`' `try`, so a profile-less user is skipped and logged. Two regression tests added, confirmed RED before and GREEN after. The defect proved **live rather than latent** — sub-project A's anonymous users already triggered it, and six digest tests were failing on `main`. | Repository owner — decided |
-| **D-2** (OQ-E-001) | Whether E ships before individual-user authentication, and which parts | **E3, E4, and `DELETE /me`** | Ship E1 and E2 now; defer E3, E4, and account deletion until authentication exists. Explicitly reject shipping all of E on the current model. | Repository owner |
-| **D-3** (OQ-E-006) | Where email-verification state lives | **E4 entirely** | Authentication owns it; E4 treats it as a precondition rather than defining it. | Repository owner + authentication designer |
+| ~~**D-2** (OQ-E-001)~~ **ANSWERED 2026-08-03** | Whether E ships before individual-user authentication, and which parts | E3, E4, and `DELETE /me` | Owner chose to design authentication rather than defer or ship unsafely. See `docs/superpowers/specs/2026-08-03-user-authentication-design.md`. E1 and E2 remain shippable immediately; E3 and E4 are unblocked once authentication is implemented. `DELETE /me` stays deferred by that document's own §15 until E1 and E3 have added their tables to the cascade. | Repository owner — decided |
+| ~~**D-3** (OQ-E-006)~~ **ANSWERED 2026-08-03** | Where email-verification state lives | E4 entirely | Authentication owns it, as recommended. The magic-link design verifies by construction — possession of the mailbox produces the session — and stores it as `users.email_verified_at`. No separate verification flow is needed. | Repository owner — decided |
 | **D-4** (OQ-D-003) | Whether the citation refresh job requires a Semantic Scholar API key | D's weekly-coverage goal | Require the key when tracking is enabled; fail fast at startup rather than under-delivering coverage silently. | Repository owner (controls deployment env) |
 | **D-5** (OQ-C-004, elevated) | Where the shared rate limiter lives | Consistency across B, C, D, E, F | Build one `rate_windows` table with a `scope` column in the first sub-project to ship; others add a scope value. See §4. | Whoever sequences B and C |
 | **D-6** (OQ-F-001) | Whether Athena extracts effect sizes, enabling true meta-analysis | Nothing in F's v1 | Do not, for now. If ever pursued, it is a separate sub-project with a clinical reviewer and a golden-set evaluation — **not** an incremental extension of F. | Repository owner, with clinical input |
@@ -282,8 +282,8 @@ This sub-project must be four plans, not one. Its four capabilities share an arc
 
 - **E1 (bookmarks) — READY FOR IMPLEMENTATION PLAN.** No authentication dependency; risk profile identical to sub-project A's saved searches. Fully specified.
 - **E2 (activity + audit substrate) — READY FOR IMPLEMENTATION PLAN.** Small, self-contained, and a prerequisite for E3. The append-only enforcement and classification rule are specified.
-- **E3 (sharing) — BLOCKED BY ANOTHER SUB-PROJECT.** Depends on E2, and gated on D-2 (authentication). The token model, revocation semantics, and indistinguishable-failure requirement are fully specified and will not need revisiting once unblocked.
-- **E4 (alerts) — NEEDS USER DECISION and NEEDS TECHNICAL RESEARCH.** Blocked on both D-2 and D-3. FR-E-004's verified-email requirement is itself an authentication feature, and email verification (token issuance, expiry, resend throttling, re-verification on address change) is a security design that does not exist.
+- **E3 (sharing) — BLOCKED BY ANOTHER SUB-PROJECT**, but the blocker now has a design. Depends on E2, and on authentication being *implemented* (`docs/superpowers/specs/2026-08-03-user-authentication-design.md`, D-2 answered 2026-08-03). Its token model, revocation semantics, and indistinguishable-failure requirement are fully specified and need no revisiting. E3 becomes READY the moment authentication ships.
+- **E4 (alerts) — BLOCKED BY ANOTHER SUB-PROJECT.** Upgraded from NEEDS USER DECISION + NEEDS TECHNICAL RESEARCH on 2026-08-03: both D-2 and D-3 are answered. FR-E-004's verified-email precondition is satisfied by construction under the magic-link design — a session can only exist if the address received mail — and the state is stored as `users.email_verified_at`. The research gap is closed; only the implementation dependency remains.
 
 ### F — Statistical analysis: **READY FOR IMPLEMENTATION PLAN**
 
@@ -300,8 +300,9 @@ One caveat for whoever writes the plan: F's most important requirements are **ne
 | D | READY FOR IMPLEMENTATION PLAN | Split into collection and UI plans |
 | E1 | READY FOR IMPLEMENTATION PLAN | — |
 | E2 | READY FOR IMPLEMENTATION PLAN | — |
-| E3 | BLOCKED BY ANOTHER SUB-PROJECT | E2, then D-2 (authentication) |
-| E4 | NEEDS USER DECISION + NEEDS TECHNICAL RESEARCH | D-2, D-3 (authentication + verification) |
+| E3 | BLOCKED BY ANOTHER SUB-PROJECT | E2, then authentication (designed 2026-08-03, not yet built) |
+| E4 | BLOCKED BY ANOTHER SUB-PROJECT | authentication (designed 2026-08-03, not yet built) |
 | F | READY FOR IMPLEMENTATION PLAN | — |
+| AUTH | READY FOR IMPLEMENTATION PLAN | — (new; unblocks E3 and E4) |
 
 Four plans can begin immediately: **B, D (collection), F, and E1.** Two need one decision each: **C** (D-1) and **E2** (none — it is ready, and listed here only because it is a prerequisite for E3). Two wait on authentication: **E3 and E4**.
