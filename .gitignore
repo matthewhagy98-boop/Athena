@@ -10,3 +10,4 @@ __pycache__/
 node_modules/
 webapp/frontend/dist/
 .impeccable/
+.worktrees/

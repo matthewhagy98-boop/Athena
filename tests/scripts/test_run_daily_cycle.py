@@ -30,11 +30,13 @@ def test_process_all_topics_dispatches_backfill_for_new_topic_and_isolates_failu
     ):
         process_all_topics(lambda: db_session, model_version="v1")
 
-    mock_backfill.assert_called_once()
-    assert mock_backfill.call_args[0][1].canonical_label == "New Topic"
+    # process_all_topics scans every topic in the database, so these assertions are
+    # scoped to the three this test created. A bare assert_called_once() would also
+    # count committed demo-seed topics.
+    ours = {"New Topic", "Failing Topic", "Existing Topic"}
+    backfilled = [c[0][1].canonical_label for c in mock_backfill.call_args_list]
+    assert [label for label in backfilled if label in ours] == ["New Topic"]
+
     # Failing topic should raise, but existing_topic (after it) should still be processed
-    assert mock_cycle.call_count == 2
-    # Verify that existing_topic was indeed called despite the failure in failing_topic
     cycle_call_topics = [call[0][1].canonical_label for call in mock_cycle.call_args_list]
-    assert "Failing Topic" in cycle_call_topics
-    assert "Existing Topic" in cycle_call_topics
+    assert [label for label in cycle_call_topics if label in ours] == ["Failing Topic", "Existing Topic"]

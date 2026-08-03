@@ -110,6 +110,8 @@ def test_select_due_users_skips_user_with_unsupported_frequency_but_still_return
 @respx.mock
 def test_process_user_digest_marks_skipped_and_advances_watermark_when_no_changes(db_session):
     user = create_user(db_session, "quiet@example.com")
+    user.created_at = datetime(2026, 6, 29)
+    db_session.flush()
     with patch(
         "evidence_engine.topics.registry.resolve_to_mesh",
         return_value=MeshResolution(mesh_id="D000006", canonical_label="Quiet Topic"),
@@ -130,6 +132,8 @@ def test_process_user_digest_marks_skipped_and_advances_watermark_when_no_change
 @respx.mock
 def test_process_user_digest_sends_and_advances_watermark_on_success(db_session):
     user = create_user(db_session, "active@example.com")
+    user.created_at = datetime(2026, 6, 29)
+    db_session.flush()
     with patch(
         "evidence_engine.topics.registry.resolve_to_mesh",
         return_value=MeshResolution(mesh_id="D000007", canonical_label="Active Topic"),
@@ -153,6 +157,8 @@ def test_process_user_digest_sends_and_advances_watermark_on_success(db_session)
 
 def test_process_user_digest_marks_failed_and_does_not_advance_watermark_on_compose_error(db_session):
     user = create_user(db_session, "flaky@example.com")
+    user.created_at = datetime(2026, 6, 29)
+    db_session.flush()
     with patch(
         "evidence_engine.topics.registry.resolve_to_mesh",
         return_value=MeshResolution(mesh_id="D000008", canonical_label="Flaky Topic"),
@@ -180,6 +186,8 @@ def test_process_user_digest_marks_failed_and_does_not_advance_watermark_on_comp
 @respx.mock
 def test_process_user_digest_marks_failed_and_does_not_advance_watermark_on_send_failure(db_session):
     user = create_user(db_session, "send_flaky@example.com")
+    user.created_at = datetime(2026, 6, 29)
+    db_session.flush()
     with patch(
         "evidence_engine.topics.registry.resolve_to_mesh",
         return_value=MeshResolution(mesh_id="D000011", canonical_label="Send Flaky Topic"),
@@ -208,3 +216,54 @@ def test_process_user_digest_marks_failed_and_does_not_advance_watermark_on_send
     assert persisted_email.send_result == EmailSendResult.FAILURE
     assert persisted_email.send_detail == "smtp timeout"
     assert get_delivery_preference(db_session, user).last_digest_sent_at is None
+
+
+def test_select_due_users_skips_user_with_no_interest_profile(db_session):
+    """A user with no InterestProfile (e.g. an anonymous frontend user created by
+    POST /users/anonymous) must be skipped, not raise out of select_due_users.
+
+    Regression: digest/profiles.py::_get_profile ends in .scalar_one(), which raises
+    NoResultFound. The call sits outside select_due_users' try block, so a single
+    profile-less user aborted the digest run for every user on the platform.
+    """
+    from digest.models import User
+
+    db_session.add(User(email="anon-00000000-0000-0000-0000-000000000001@no-reply.local"))
+    db_session.flush()
+    with_interest = create_user(db_session, "still_delivered@example.com")
+    with patch(
+        "evidence_engine.topics.registry.resolve_to_mesh",
+        return_value=MeshResolution(mesh_id="D000021", canonical_label="Survivor Topic"),
+    ):
+        add_interest(db_session, with_interest, "survivor topic")
+
+    due = select_due_users(db_session, datetime(2026, 7, 6))
+
+    assert [u.email for u in due] == ["still_delivered@example.com"]
+
+
+def test_select_due_users_skips_user_with_interests_but_no_delivery_preference(db_session):
+    """A user with an InterestProfile and a ProfileTopic but no DeliveryPreference must
+    be skipped, not raise. This is the hazard sub-project C would introduce by giving
+    anonymous users interests; get_delivery_preference also ends in .scalar_one().
+    """
+    from digest.models import DeliveryPreference
+
+    no_pref_user = create_user(db_session, "no_pref@example.com")
+    with_interest = create_user(db_session, "delivered@example.com")
+    with patch(
+        "evidence_engine.topics.registry.resolve_to_mesh",
+        return_value=MeshResolution(mesh_id="D000022", canonical_label="Shared Topic"),
+    ):
+        add_interest(db_session, no_pref_user, "shared topic")
+        add_interest(db_session, with_interest, "shared topic")
+
+    pref = db_session.execute(
+        select(DeliveryPreference).where(DeliveryPreference.user_id == no_pref_user.id)
+    ).scalar_one()
+    db_session.delete(pref)
+    db_session.flush()
+
+    due = select_due_users(db_session, datetime(2026, 7, 6))
+
+    assert [u.email for u in due] == ["delivered@example.com"]
