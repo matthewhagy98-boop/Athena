@@ -66,4 +66,5 @@ def test_upsert_paper_updates_existing_paper_on_second_call(db_session):
     db_session.flush()
 
     assert second.id == first.id
-    assert db_session.query(Paper).count() == 1
+    # Scoped to this test's pmid: a global count also sees committed demo-seed rows.
+    assert db_session.query(Paper).filter(Paper.pmid == "12345678").count() == 1
