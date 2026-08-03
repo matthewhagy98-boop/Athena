@@ -27,10 +27,15 @@ def select_due_users(session: Session, now: datetime) -> list[User]:
     active_users = session.execute(select(User).where(User.status == "active")).scalars().all()
     due = []
     for user in active_users:
-        if not list_interests(session, user):
-            continue
-        preference = get_delivery_preference(session, user)
+        # A user may legitimately have no digest rows at all: the frontend's
+        # anonymous-identity endpoint creates a User with neither an InterestProfile
+        # nor a DeliveryPreference. Both accessors below end in .scalar_one(), which
+        # raises NoResultFound for such a user. Skipping one user must never abort the
+        # run for the rest, so both lookups are guarded alongside the due check.
         try:
+            if not list_interests(session, user):
+                continue
+            preference = get_delivery_preference(session, user)
             is_due = _is_due(preference, now)
         except Exception:
             logger.exception("Failed to evaluate due status for user %s; skipping", user.id)
