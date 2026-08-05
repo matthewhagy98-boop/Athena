@@ -9,7 +9,7 @@ function toUrlParams(params: SearchParams): Record<string, string> {
 
 export function SavedSearchesPage() {
   const { userId, error: identityError } = useIdentity();
-  const { data, isLoading } = useSavedSearches(userId);
+  const { data, isLoading, isError } = useSavedSearches(userId);
   const runSearch = useRunSavedSearch();
   const deleteSearch = useDeleteSavedSearch();
   const navigate = useNavigate();
@@ -41,6 +41,11 @@ export function SavedSearchesPage() {
       {identityError && (
         <p className="mb-4 rounded border border-error/40 bg-surface-container-lowest p-2 text-xs text-error">
           Couldn't set up your anonymous profile — saved searches are unavailable.
+        </p>
+      )}
+      {isError && (
+        <p className="mb-4 rounded border border-error/40 bg-surface-container-lowest p-2 text-xs text-error">
+          Couldn't load your saved searches. Try again.
         </p>
       )}
       {(runSearch.isError || deleteSearch.isError) && (

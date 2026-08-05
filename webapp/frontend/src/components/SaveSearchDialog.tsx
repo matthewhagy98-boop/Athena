@@ -5,11 +5,13 @@ export function SaveSearchDialog({
   onSave,
   onClose,
   disabled,
+  error,
 }: {
   open: boolean;
   onSave: (name: string) => void;
   onClose: () => void;
   disabled: boolean;
+  error?: string;
 }) {
   const [name, setName] = useState("");
   if (!open) return null;
@@ -17,6 +19,11 @@ export function SaveSearchDialog({
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-primary-container/40" role="dialog" aria-modal="true" aria-labelledby="save-search-title">
       <div className="w-80 rounded-lg border border-hairline bg-surface-container-lowest p-5">
         <p id="save-search-title" className="mb-3 text-sm font-semibold">Save this search</p>
+        {error && (
+          <p className="mb-3 rounded border border-error/40 bg-surface-container-lowest p-2 text-xs text-error">
+            {error}
+          </p>
+        )}
         <label className="mb-1 block text-xs font-medium text-on-surface-variant" htmlFor="save-search-name">Name</label>
         <input
           id="save-search-name"
