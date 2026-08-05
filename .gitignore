@@ -11,3 +11,5 @@ node_modules/
 webapp/frontend/dist/
 .impeccable/
 .worktrees/
+webapp/frontend/test-results/
+webapp/frontend/playwright-report/
