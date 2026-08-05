@@ -71,7 +71,7 @@ test("renders paper with null study_type without crashing", async () => {
         rows: [
           {
             paper: { id: "p2", title: "Paper with null study type", abstract: null, pub_date: "2026-05-15" },
-            score: { evidence_tier: "established", study_type: null as unknown as string, final_score: 70 },
+            score: { evidence_tier: "established", study_type: null, final_score: 70 },
             topics: [{ id: "t1", canonical_label: "Cognitive mapping" }],
           },
         ],

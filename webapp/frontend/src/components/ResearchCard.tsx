@@ -30,7 +30,7 @@ export function ResearchCard({
         <div className="flex flex-wrap items-center gap-3 text-xs">
           {row.score && (
             <span className="rounded bg-secondary-container px-1.5 font-semibold text-on-secondary-container">
-              {row.score.study_type.replace(/_/g, " ")}
+              {row.score.study_type?.replace(/_/g, " ") ?? "—"}
             </span>
           )}
           {row.paper.pub_date && <span className="text-on-surface-variant">{row.paper.pub_date}</span>}

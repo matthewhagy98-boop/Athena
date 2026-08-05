@@ -53,7 +53,7 @@ export function ComparePage() {
                         <span className="rounded bg-secondary-container px-1.5 font-semibold text-on-secondary-container">
                           {row.score.evidence_tier}
                         </span>
-                        <span>{row.score.study_type.replace(/_/g, " ")}</span>
+                        <span>{row.score.study_type?.replace(/_/g, " ") ?? "—"}</span>
                         <EvidenceIndicator finalScore={row.score.final_score} />
                       </div>
                     ) : (

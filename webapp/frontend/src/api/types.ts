@@ -5,7 +5,11 @@ export interface TopicRef {
 
 export interface PaperRow {
   paper: { id: string; title: string; abstract: string | null; pub_date: string | null };
-  score: { evidence_tier: "established" | "emerging" | "speculative"; study_type: string; final_score: number } | null;
+  score: {
+    evidence_tier: "established" | "emerging" | "speculative";
+    study_type: string | null;
+    final_score: number;
+  } | null;
   topics: TopicRef[];
 }
 
