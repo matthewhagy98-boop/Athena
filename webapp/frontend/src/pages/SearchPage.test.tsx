@@ -70,6 +70,18 @@ test("selecting cards shows the compare tray", async () => {
   expect(screen.getByRole("button", { name: /compare \(2\)/i })).toBeInTheDocument();
 });
 
+test("save search shows an error when the save fails", async () => {
+  server.use(
+    http.get("/search", () => HttpResponse.json({ rows: [], total: 0, page: 1, page_size: 50 })),
+    http.post("/saved-searches", () => HttpResponse.text("boom", { status: 500 })),
+  );
+  renderPage("/search?q=neural");
+  fireEvent.click(await screen.findByRole("button", { name: /save search/i }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "My search" } });
+  fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+  await waitFor(() => expect(screen.getByText(/couldn't save that search/i)).toBeInTheDocument());
+});
+
 test("save search posts current params with the identity user", async () => {
   let posted: unknown = null;
   server.use(

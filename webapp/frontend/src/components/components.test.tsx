@@ -50,6 +50,21 @@ test("CompareTray hides at zero and fires onCompare", () => {
   expect(onCompare).toHaveBeenCalled();
 });
 
+test("ResearchCard with null study_type on a scored paper renders fallback without throwing", () => {
+  const nullStudyTypeRow: PaperRow = {
+    paper: { id: "p3", title: "Scored but untyped paper", abstract: null, pub_date: "2024-11-02" },
+    score: { evidence_tier: "established", study_type: null, final_score: 80 },
+    topics: [],
+  };
+  render(
+    <MemoryRouter>
+      <ResearchCard row={nullStudyTypeRow} checked={false} onToggleSelect={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByText("Scored but untyped paper")).toBeInTheDocument();
+  expect(screen.getByText("—")).toBeInTheDocument();
+});
+
 test("ResearchCard with null score renders no badge or evidence bar", () => {
   const nullScoreRow: PaperRow = {
     paper: { id: "p2", title: "Unscored paper", abstract: null, pub_date: null },

@@ -71,7 +71,7 @@ test("renders paper with null study_type without crashing", async () => {
         rows: [
           {
             paper: { id: "p2", title: "Paper with null study type", abstract: null, pub_date: "2026-05-15" },
-            score: { evidence_tier: "established", study_type: null as unknown as string, final_score: 70 },
+            score: { evidence_tier: "established", study_type: null, final_score: 70 },
             topics: [{ id: "t1", canonical_label: "Cognitive mapping" }],
           },
         ],
@@ -85,4 +85,20 @@ test("renders paper with null study_type without crashing", async () => {
   await waitFor(() => expect(screen.getByText("Paper with null study type")).toBeInTheDocument());
   // Verify the table renders without crashing and shows em-dash for null study_type
   expect(screen.getByText("—")).toBeInTheDocument();
+});
+
+test("shows a general error, distinct from not-found, when the distribution request fails", async () => {
+  server.use(
+    http.get("/topics/t1/tier-distribution", () => HttpResponse.text("boom", { status: 500 })),
+  );
+  renderPage();
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't load this topic/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/topic not found/i)).not.toBeInTheDocument();
+});
+
+test("shows a loading state while topic data is in flight", () => {
+  renderPage();
+  expect(screen.getByText(/loading topic/i)).toBeInTheDocument();
 });

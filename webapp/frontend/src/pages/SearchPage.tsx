@@ -115,6 +115,7 @@ export function SearchPage() {
       <SaveSearchDialog
         open={saveOpen}
         disabled={userId === null || createSavedSearch.isPending}
+        error={createSavedSearch.isError ? "Couldn't save that search. Try again." : undefined}
         onClose={() => setSaveOpen(false)}
         onSave={(name) => {
           if (userId === null) return;

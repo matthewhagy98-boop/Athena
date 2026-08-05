@@ -36,6 +36,26 @@ test("renders side-by-side paper cards with an unresolved notice", async () => {
   expect(screen.getByText(/1 id\(s\) could not be found/i)).toBeInTheDocument();
 });
 
+test("renders a scored paper with null study_type without throwing", async () => {
+  server.use(
+    http.get("/compare/papers", () =>
+      HttpResponse.json({
+        rows: [
+          {
+            paper: { id: "p2", title: "Untyped paper", abstract: "Abs.", pub_date: "2024-01-01" },
+            score: { evidence_tier: "established", study_type: null, final_score: 80 },
+            topics: [],
+          },
+        ],
+        unresolved_ids: [],
+      }),
+    ),
+  );
+  renderAt("/compare?paper_ids=p2");
+  await waitFor(() => expect(screen.getByText("Untyped paper")).toBeInTheDocument());
+  expect(screen.getByText("—")).toBeInTheDocument();
+});
+
 test("renders topic comparison with consensus text", async () => {
   server.use(
     http.get("/topics", () => HttpResponse.json([])),
@@ -49,6 +69,12 @@ test("renders topic comparison with consensus text", async () => {
   renderAt("/compare?topic_ids=t1");
   await waitFor(() => expect(screen.getByText("Topic one")).toBeInTheDocument());
   expect(screen.getByText("Strong agreement.")).toBeInTheDocument();
+});
+
+test("shows an error when the papers comparison fails to load", async () => {
+  server.use(http.get("/compare/papers", () => HttpResponse.text("boom", { status: 500 })));
+  renderAt("/compare?paper_ids=p1");
+  await waitFor(() => expect(screen.getByText(/couldn't load this comparison/i)).toBeInTheDocument());
 });
 
 test("shows empty guidance with no selection", () => {
