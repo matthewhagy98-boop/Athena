@@ -20,6 +20,15 @@ def create_user(session: Session, email: str) -> User:
     return user
 
 
+def create_anonymous_user(session: Session) -> User:
+    # No InterestProfile/DeliveryPreference: placeholder emails must never
+    # be enrolled in digest delivery.
+    user = User(email=f"anon-{uuid.uuid4()}@no-reply.local")
+    session.add(user)
+    session.flush()
+    return user
+
+
 def _get_profile(session: Session, user: User) -> InterestProfile:
     return session.execute(
         select(InterestProfile).where(InterestProfile.user_id == user.id)

@@ -164,3 +164,68 @@ def test_timeline_endpoint(db_session):
 
     assert response.status_code == 200
     assert response.json()[0]["count"] == 1
+
+
+def test_create_anonymous_user_endpoint(db_session):
+    client = _client(db_session)
+    response = client.post("/users/anonymous")
+    assert response.status_code == 201
+    user_id = uuid.UUID(response.json()["user_id"])
+
+    from digest.models import User
+    user = db_session.get(User, user_id)
+    assert user is not None
+    assert user.email.endswith("@no-reply.local")
+
+
+def test_list_topics_endpoint_returns_sorted_topics(db_session):
+    db_session.add(Topic(canonical_label="Zebra Topic", mesh_id="D000101"))
+    db_session.add(Topic(canonical_label="Alpha Topic", mesh_id="D000102"))
+    db_session.flush()
+
+    client = _client(db_session)
+    response = client.get("/topics")
+
+    assert response.status_code == 200
+    labels = [t["canonical_label"] for t in response.json()]
+    assert labels == sorted(labels)
+    assert {"id", "canonical_label"} <= set(response.json()[0].keys())
+
+
+def test_search_rows_include_topics_abstract_and_study_type(db_session):
+    topic = Topic(canonical_label="Enriched Topic", mesh_id="D000103")
+    db_session.add(topic)
+    db_session.flush()
+    paper = _seed_paper(db_session, topic, "Enrichment study of drug Q")
+    paper.abstract = "A detailed abstract about drug Q."
+    db_session.flush()
+    sync_search_index(db_session)
+
+    client = _client(db_session)
+    row = client.get("/search", params={"q": "drug Q"}).json()["rows"][0]
+
+    assert row["paper"]["abstract"] == "A detailed abstract about drug Q."
+    assert row["score"]["study_type"] == "rct"
+    assert row["topics"] == [{"id": str(topic.id), "canonical_label": "Enriched Topic"}]
+
+
+def test_compare_papers_rows_include_topics(db_session):
+    topic = Topic(canonical_label="Compare Topic", mesh_id="D000104")
+    db_session.add(topic)
+    db_session.flush()
+    paper = _seed_paper(db_session, topic, "Comparable paper")
+
+    client = _client(db_session)
+    response = client.get("/compare/papers", params={"paper_ids": [str(paper.id)]})
+
+    assert response.json()["rows"][0]["topics"][0]["canonical_label"] == "Compare Topic"
+
+
+def test_list_saved_searches_includes_last_run_at(db_session):
+    user = create_user(db_session, "listrun@example.com")
+    client = _client(db_session)
+    client.post("/saved-searches", json={"user_id": str(user.id), "name": "Mine", "query_params": {"q": "x"}})
+
+    rows = client.get("/saved-searches", params={"user_id": str(user.id)}).json()
+
+    assert rows[0]["last_run_at"] is None
