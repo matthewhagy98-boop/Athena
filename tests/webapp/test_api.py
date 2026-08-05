@@ -50,6 +50,30 @@ def test_search_endpoint_rejects_invalid_tier_with_422(db_session):
     assert response.status_code == 422
 
 
+def test_search_endpoint_treats_pending_score_as_unscored(db_session):
+    topic = Topic(canonical_label="Pending Topic", mesh_id="D000106")
+    db_session.add(topic)
+    db_session.flush()
+    paper = Paper(title="A paper awaiting scoring", pub_date=date(2026, 5, 1))
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(PaperTopic(paper_id=paper.id, topic_id=topic.id))
+    db_session.add(Score(paper_id=paper.id, is_pending=True, model_version="v1"))
+    db_session.add(
+        ChangeEvent(topic_id=topic.id, paper_id=paper.id, event_type=ChangeEventType.NEW_PAPER, detected_at=datetime(2026, 5, 1))
+    )
+    db_session.flush()
+    sync_search_index(db_session)
+
+    client = _client(db_session)
+    response = client.get("/search", params={"q": "awaiting scoring"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["rows"][0]["score"] is None
+
+
 def test_compare_papers_endpoint_returns_partial_results(db_session):
     paper = Paper(title="Existing paper")
     db_session.add(paper)

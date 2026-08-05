@@ -59,7 +59,7 @@ def _paper_out(row, topics_by_paper: dict) -> dict:
             "study_type": row.score.study_type.value if row.score.study_type else None,
             "final_score": row.score.final_score,
         }
-        if row.score
+        if row.score and not row.score.is_pending
         else None,
         "topics": topics_by_paper.get(row.paper.id, []),
     }
