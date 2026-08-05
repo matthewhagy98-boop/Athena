@@ -20,6 +20,16 @@ export function TopicDetailPage() {
     return <p className="text-sm text-on-surface-variant">Topic not found.</p>;
   }
 
+  // Any non-404 failure across the three topic queries: the charts and table would
+  // otherwise render empty, which reads as "no data" rather than "request failed".
+  if (distribution.isError || timeline.isError || papers.isError) {
+    return <p className="text-sm text-error">Couldn't load this topic. Try again.</p>;
+  }
+
+  if (distribution.isLoading) {
+    return <p className="text-sm text-on-surface-variant">Loading topic…</p>;
+  }
+
   const distData = distribution.data
     ? [
         { tier: "Established", count: distribution.data.established },

@@ -86,3 +86,19 @@ test("renders paper with null study_type without crashing", async () => {
   // Verify the table renders without crashing and shows em-dash for null study_type
   expect(screen.getByText("—")).toBeInTheDocument();
 });
+
+test("shows a general error, distinct from not-found, when the distribution request fails", async () => {
+  server.use(
+    http.get("/topics/t1/tier-distribution", () => HttpResponse.text("boom", { status: 500 })),
+  );
+  renderPage();
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't load this topic/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/topic not found/i)).not.toBeInTheDocument();
+});
+
+test("shows a loading state while topic data is in flight", () => {
+  renderPage();
+  expect(screen.getByText(/loading topic/i)).toBeInTheDocument();
+});

@@ -38,6 +38,9 @@ export function ComparePage() {
       {paperIds.length > 0 && (
         <>
           {papers.isLoading && <p className="text-sm text-on-surface-variant">Loading comparison…</p>}
+          {papers.isError && (
+            <p className="text-sm text-error">Couldn't load this comparison. Try again.</p>
+          )}
           {papers.data && (
             <>
               <UnresolvedNotice ids={papers.data.unresolved_ids} />
@@ -73,6 +76,9 @@ export function ComparePage() {
       {topicIds.length > 0 && (
         <>
           {topicsCompare.isLoading && <p className="text-sm text-on-surface-variant">Loading comparison…</p>}
+          {topicsCompare.isError && (
+            <p className="text-sm text-error">Couldn't load this comparison. Try again.</p>
+          )}
           {topicsCompare.data && (
             <>
               <UnresolvedNotice ids={topicsCompare.data.unresolved_ids} />

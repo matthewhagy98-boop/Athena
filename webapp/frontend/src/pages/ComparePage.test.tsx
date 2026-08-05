@@ -71,6 +71,12 @@ test("renders topic comparison with consensus text", async () => {
   expect(screen.getByText("Strong agreement.")).toBeInTheDocument();
 });
 
+test("shows an error when the papers comparison fails to load", async () => {
+  server.use(http.get("/compare/papers", () => HttpResponse.text("boom", { status: 500 })));
+  renderAt("/compare?paper_ids=p1");
+  await waitFor(() => expect(screen.getByText(/couldn't load this comparison/i)).toBeInTheDocument());
+});
+
 test("shows empty guidance with no selection", () => {
   renderAt("/compare");
   expect(screen.getByText(/select papers from search/i)).toBeInTheDocument();
