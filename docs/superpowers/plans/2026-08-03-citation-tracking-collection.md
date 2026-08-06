@@ -241,9 +241,11 @@ Expected: all pass — the new tables are additive and nothing else reads them.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add citations/ tests/citations/ alembic/versions/
+git add citations/ tests/citations/ alembic/versions/ alembic/env.py
 git commit -m "feat: add citation tracking tables and models"
 ```
+
+`alembic/env.py` is in this list because Step 3 edits it. Committing the migration without the registration line would leave the next autogenerate silently empty.
 
 ---
 
