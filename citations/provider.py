@@ -48,6 +48,7 @@ class SemanticScholarCitationClient:
         if not ids:
             return {}
 
+        # 30s timeout is longer than the 15s sibling adapter because a batch carries up to 500 ids.
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(
                 BATCH_URL,
@@ -60,13 +61,18 @@ class SemanticScholarCitationClient:
                 f"citation batch request failed: {resp.status_code}", status_code=resp.status_code
             )
 
+        payload = resp.json()
+        if not isinstance(payload, list):
+            raise CitationProviderError("citation batch response was not a list")
+
         out: dict[str, CitationObservation] = {}
-        for record in resp.json():
+        for record in payload:
             # The endpoint returns a null entry, positionally, for unresolvable ids.
             if not record:
                 continue
             paper_id = record.get("paperId")
             count = record.get("citationCount")
+            # Records with missing paperId or citationCount are dropped silently; Task 3 consumers should expect ids to vanish for this reason as well as the documented unresolvable-id case.
             if paper_id is None or count is None:
                 continue
             out[paper_id] = CitationObservation(

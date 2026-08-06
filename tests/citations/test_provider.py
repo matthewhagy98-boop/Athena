@@ -39,12 +39,33 @@ def test_fetch_batch_omits_ids_the_provider_returned_null_for():
 
 @respx.mock
 def test_fetch_batch_raises_provider_error_on_rate_limit():
-    respx.post(BATCH_URL).mock(return_value=httpx.Response(429, text="slow down"))
+    route = respx.post(BATCH_URL).mock(return_value=httpx.Response(429, text="slow down"))
 
     with pytest.raises(CitationProviderError) as exc:
         SemanticScholarCitationClient().fetch_batch(["aaa"])
 
     assert exc.value.status_code == 429
+    # A 429 must never be retried -- retrying amplifies the rate limit. Without this
+    # assertion a broken retry predicate passes the test while firing three requests.
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_fetch_batch_retries_server_errors():
+    route = respx.post(BATCH_URL).mock(return_value=httpx.Response(503, text="unavailable"))
+
+    with pytest.raises(CitationProviderError):
+        SemanticScholarCitationClient().fetch_batch(["aaa"])
+
+    assert route.call_count == 3
+
+
+@respx.mock
+def test_fetch_batch_rejects_non_list_body():
+    respx.post(BATCH_URL).mock(return_value=httpx.Response(200, json={"data": []}))
+
+    with pytest.raises(CitationProviderError, match="not a list"):
+        SemanticScholarCitationClient().fetch_batch(["aaa"])
 
 
 def test_fetch_batch_rejects_oversized_batch():
