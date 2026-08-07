@@ -29,7 +29,19 @@ def run_citation_refresh(
 
     client = client or SemanticScholarCitationClient()
     state = refresh_citations(session, client, now=now)
-    recompute_all(session, now=now)
+    # Snapshots are the system of record and cannot be re-obtained -- the provider
+    # reports only current counts, never dated history. Make today's collection
+    # durable before touching derived data, so a recompute failure below can never
+    # take the snapshots down with it.
+    session.commit()
+    try:
+        recompute_all(session, now=now)
+        session.commit()
+    except Exception:
+        session.rollback()
+        # The velocity cache rebuilds itself for free on the next run; the
+        # snapshots committed above are already safe.
+        logger.exception("Velocity recompute failed; today's snapshots are committed")
     logger.info(
         "Citation refresh complete: %s refreshed, %s failed, %s anomalies",
         state.papers_refreshed,
