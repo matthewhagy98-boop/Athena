@@ -94,6 +94,20 @@ def test_lookback_is_capped_at_ninety_days():
     assert result.velocity_per_30d == Decimal("90.00")  # (260-200)/20*30
 
 
+def test_merge_and_recovery_does_not_produce_phantom_velocity():
+    # A merge (240 -> 190) reverted by a later recovery (190 -> 240) is zero real
+    # growth. If the recovery snapshot were left unflagged, the (190 -> 240) pair
+    # would read as (50/20*30) = 75.00/30d out of thin air. With both the drop and
+    # the recovery flagged anomalous (citations/refresh.py's phantom-recovery
+    # detection), every candidate pair spans an anomaly and none qualifies.
+    snapshots = [_snap(0, 240), _snap(20, 190, anomalous=True), _snap(40, 240, anomalous=True)]
+
+    result = compute_velocity(snapshots)
+
+    assert result.status == "insufficient_history"
+    assert result.velocity_per_30d is None
+
+
 def test_unsorted_input_is_handled():
     # Snapshots arrive in arbitrary order from the DB; the function must sort them.
     result = compute_velocity([_snap(35, 132), _snap(0, 104), _snap(14, 112)])

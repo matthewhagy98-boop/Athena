@@ -1,7 +1,7 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from citations.models import CitationRefreshState, CitationSnapshot, CitationVelocityCache
@@ -11,6 +11,10 @@ from evidence_engine.db.models import Paper
 logger = logging.getLogger(__name__)
 
 JOB_NAME = "citation_refresh"
+
+# Matches velocity.MAX_LOOKBACK_DAYS: a recovery beyond this window is treated as
+# genuine growth rather than the tail of an old merge/revert.
+ANOMALY_RECOVERY_LOOKBACK_DAYS = 90
 
 
 def _get_or_create_state(session: Session) -> CitationRefreshState:
@@ -42,6 +46,53 @@ def _latest_snapshot(session: Session, paper_id) -> CitationSnapshot | None:
         .order_by(CitationSnapshot.observed_at.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def _recent_anomalous_snapshot(session: Session, paper_id, now: datetime) -> CitationSnapshot | None:
+    """Most recent snapshot flagged anomalous within the recovery lookback window."""
+    cutoff = now - timedelta(days=ANOMALY_RECOVERY_LOOKBACK_DAYS)
+    return session.execute(
+        select(CitationSnapshot)
+        .where(
+            CitationSnapshot.paper_id == paper_id,
+            CitationSnapshot.is_anomalous.is_(True),
+            CitationSnapshot.observed_at >= cutoff,
+        )
+        .order_by(CitationSnapshot.observed_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _pre_anomaly_high_water_mark(session: Session, paper_id, anomaly_observed_at: datetime) -> int | None:
+    """Highest citation_count observed for this paper strictly before an anomaly."""
+    return session.execute(
+        select(func.max(CitationSnapshot.citation_count)).where(
+            CitationSnapshot.paper_id == paper_id,
+            CitationSnapshot.observed_at < anomaly_observed_at,
+        )
+    ).scalar_one()
+
+
+def _is_phantom_recovery(session: Session, paper_id, new_count: int, previous, now: datetime) -> bool:
+    """Detect a count climbing back to (or past) its pre-drop high after a merge.
+
+    A provider merge that is later reverted (e.g. 240 -> 190 -> 240) is not real
+    growth: the paper never actually lost or regained citations, the provider's
+    bookkeeping did. Spec Sec 14.3 only flags decreases, which leaves this
+    compensating increase unflagged and lets compute_velocity report a large
+    velocity for a paper with zero real growth. So: whenever the previous snapshot
+    is anomalous, or an anomalous snapshot exists within the recovery lookback
+    window, and the new count has climbed back to or past the high-water mark that
+    stood immediately before that anomaly, flag the new snapshot too -- it is the
+    tail of the same artifact, not new evidence.
+    """
+    anomaly = previous if (previous is not None and previous.is_anomalous) else None
+    if anomaly is None:
+        anomaly = _recent_anomalous_snapshot(session, paper_id, now)
+    if anomaly is None:
+        return False
+    pre_anomaly_high = _pre_anomaly_high_water_mark(session, paper_id, anomaly.observed_at)
+    return pre_anomaly_high is not None and new_count >= pre_anomaly_high
 
 
 def _chunks(items: list, size: int):
@@ -125,7 +176,12 @@ def refresh_citations(
                 continue
 
             previous = _latest_snapshot(session, paper.id)
-            is_anomalous = previous is not None and observation.citation_count < previous.citation_count
+            is_decrease = previous is not None and observation.citation_count < previous.citation_count
+            # `or` short-circuits, so the phantom-recovery lookup only runs when
+            # this snapshot isn't already flagged as a plain decrease.
+            is_anomalous = is_decrease or _is_phantom_recovery(
+                session, paper.id, observation.citation_count, previous, now
+            )
             if is_anomalous:
                 state.anomalies_detected += 1
 

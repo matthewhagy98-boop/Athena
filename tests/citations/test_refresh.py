@@ -91,6 +91,37 @@ def test_refresh_flags_a_decrease_as_anomalous_without_clamping(db_session):
     assert state.anomalies_detected == 1
 
 
+def test_refresh_flags_a_merge_recovery_as_anomalous(db_session):
+    # A provider merge (240 -> 190) that is later reverted (190 -> 240) is not real
+    # growth -- the recovery snapshot must be flagged too, or compute_velocity would
+    # read it as a huge, entirely fictitious jump.
+    _paper(db_session, "s2-recover", "Merge then recover")
+
+    refresh_citations(
+        db_session,
+        FakeClient({"s2-recover": CitationObservation("s2-recover", 240, None)}),
+        now=datetime(2026, 8, 1, 9, 0),
+    )
+    refresh_citations(
+        db_session,
+        FakeClient({"s2-recover": CitationObservation("s2-recover", 190, None)}),
+        now=datetime(2026, 8, 2, 9, 0),
+    )
+    refresh_citations(
+        db_session,
+        FakeClient({"s2-recover": CitationObservation("s2-recover", 240, None)}),
+        now=datetime(2026, 8, 3, 9, 0),
+    )
+
+    snaps = (
+        db_session.execute(select(CitationSnapshot).order_by(CitationSnapshot.observed_at))
+        .scalars()
+        .all()
+    )
+    assert [s.citation_count for s in snaps] == [240, 190, 240]
+    assert [s.is_anomalous for s in snaps] == [False, True, True]
+
+
 def test_refresh_marks_papers_without_provider_id_as_unrefreshable(db_session):
     paper = Paper(title="No provider id")
     db_session.add(paper)
