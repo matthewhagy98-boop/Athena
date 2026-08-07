@@ -122,8 +122,15 @@ def recompute_all(session: Session, now: datetime | None = None) -> int:
             caches[paper_id] = cache
 
         paper = session.get(Paper, paper_id)
+        # Ordered so a multi-topic paper always picks the same topic across runs --
+        # without an ORDER BY, Postgres is free to return a different row of an
+        # unordered `.limit(1)` query on different executions, which would make the
+        # cohort (and thus the percentile) jump with no underlying data change.
         topic_link = session.execute(
-            select(PaperTopic).where(PaperTopic.paper_id == paper_id).limit(1)
+            select(PaperTopic)
+            .where(PaperTopic.paper_id == paper_id)
+            .order_by(PaperTopic.topic_id)
+            .limit(1)
         ).scalar_one_or_none()
 
         cache.status = result.status

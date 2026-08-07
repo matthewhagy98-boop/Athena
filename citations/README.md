@@ -64,7 +64,11 @@ span. Gaps are not interpolated — a wider interval is simply a wider interval,
 delta genuinely accrued across it.
 
 Percentiles are field-normalized: the cohort is papers sharing a topic and a fixed
-4-year publication band. Bands are anchored on years divisible by 4 rather than
+4-year publication band. A paper linked to more than one topic is placed in exactly
+one cohort, keyed on its lowest `topic_id` — a deliberate simplification of spec
+§14.2's "shares at least one topic" definition, chosen so a paper's cohort (and thus
+its percentile) is deterministic and stable across recomputes rather than depending
+on unordered multi-topic membership. Bands are anchored on years divisible by 4 rather than
 sliding ±2 years, so membership is symmetric — a sliding window would put A in B's
 cohort without necessarily putting B in A's. Percentiles are clamped to 1–99, because
 a cohort this size cannot support a claim of 0th or 100th.

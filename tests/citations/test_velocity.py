@@ -219,6 +219,41 @@ def test_recompute_is_idempotent(db_session):
     assert caches[0].velocity_per_30d == Decimal("30.00")
 
 
+def test_cohort_key_is_stable_for_multi_topic_paper(db_session):
+    # A paper linked to several topics must land in the same cohort on every run --
+    # otherwise its percentile could jump between recomputes with no data change.
+    topics = [Topic(canonical_label=f"Multi topic {i}", mesh_id=f"D_MULTI_{i}") for i in range(3)]
+    db_session.add_all(topics)
+    db_session.flush()
+
+    paper = _make_paper_with_series(db_session, None, "Multi-topic paper", 0, 10, pub_date=date(2026, 1, 1))
+    for topic in topics:
+        db_session.add(PaperTopic(paper_id=paper.id, topic_id=topic.id))
+    db_session.flush()
+
+    recompute_all(db_session)
+    first_key = (
+        db_session.execute(
+            select(CitationVelocityCache).where(CitationVelocityCache.paper_id == paper.id)
+        )
+        .scalar_one()
+        .cohort_key
+    )
+
+    recompute_all(db_session)
+    second_key = (
+        db_session.execute(
+            select(CitationVelocityCache).where(CitationVelocityCache.paper_id == paper.id)
+        )
+        .scalar_one()
+        .cohort_key
+    )
+
+    assert first_key == second_key
+    # The deterministic pick is always the lowest topic_id, regardless of insert order.
+    assert first_key == f"{min(t.id for t in topics)}:2024"
+
+
 def test_shrinking_cohort_does_not_leave_a_stale_percentile(db_session):
     # A paper that drops out of a large cohort must lose its percentile, not keep
     # a value computed when the cohort was big enough.
