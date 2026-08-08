@@ -196,6 +196,43 @@ def test_refresh_batches_requests(db_session):
     assert [len(c) for c in client.calls] == [2, 2, 1]
 
 
+def test_refresh_records_failed_status_on_unexpected_error(db_session, monkeypatch):
+    # The per-batch try/except only wraps client.fetch_batch(); anything that blows
+    # up afterward, inside the per-paper loop (e.g. a bug in the anomaly-detection
+    # helpers), currently escapes refresh_citations with the state row stuck on
+    # "running". Simulate that by breaking an internal helper called from inside
+    # that loop -- _is_phantom_recovery runs outside the batch-level try/except.
+    _paper(db_session, "s2-crash", "Crashes mid loop")
+    client = FakeClient({"s2-crash": CitationObservation("s2-crash", 100, None)})
+
+    # Seed a previous snapshot (with the real helper still in place) so `previous`
+    # is not None and `is_decrease` alone doesn't short-circuit past the helper
+    # that gets patched below.
+    refresh_citations(
+        db_session,
+        FakeClient({"s2-crash": CitationObservation("s2-crash", 50, None)}),
+        now=datetime(2026, 8, 1, 9, 0),
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom inside per-paper loop")
+
+    monkeypatch.setattr("citations.refresh._is_phantom_recovery", boom)
+
+    try:
+        refresh_citations(db_session, client, now=datetime(2026, 8, 2, 9, 0))
+        assert False, "expected RuntimeError to propagate"
+    except RuntimeError:
+        pass
+
+    state = db_session.execute(
+        select(CitationRefreshState).where(CitationRefreshState.job_name == "citation_refresh")
+    ).scalar_one()
+    assert state.status == "failed"
+    assert state.last_error is not None
+    assert "boom inside per-paper loop" in state.last_error
+
+
 def test_refresh_reuses_the_single_state_row(db_session):
     _paper(db_session, "s2-5", "State paper")
     client = FakeClient({"s2-5": CitationObservation("s2-5", 1, None)})

@@ -118,89 +118,106 @@ def refresh_citations(
     state.last_error = None
     session.flush()
 
-    papers = session.execute(select(Paper)).scalars().all()
+    try:
+        papers = session.execute(select(Paper)).scalars().all()
 
-    # Papers with no provider id can never be refreshed. Record that once and skip
-    # them, rather than counting them as failures on every subsequent run.
-    trackable = []
-    for paper in papers:
-        if not paper.semantic_scholar_id:
-            _get_or_create_cache(session, paper.id).refresh_status = "no_provider_id"
-        else:
-            trackable.append(paper)
-    session.flush()
-
-    by_provider_id = {p.semantic_scholar_id: p for p in trackable}
-    had_failure = False
-
-    for chunk in _chunks(list(by_provider_id.keys()), batch_size):
-        state.batches_attempted += 1
-        try:
-            observations = client.fetch_batch(chunk)
-        except CitationProviderError as exc:
-            # One bad batch must not cost the whole day's collection.
-            had_failure = True
-            if exc.status_code == 429:
-                state.rate_limit_events += 1
-            state.papers_failed += len(chunk)
-            state.last_error = str(exc)[:2000]
-            logger.warning("Citation batch failed (%s); continuing with next batch", exc)
-            continue
-        except Exception as exc:  # noqa: BLE001 - one bad batch must not abort the run
-            had_failure = True
-            state.papers_failed += len(chunk)
-            state.last_error = str(exc)[:2000]
-            logger.exception("Unexpected citation batch failure; continuing")
-            continue
-
-        for provider_id in chunk:
-            paper = by_provider_id[provider_id]
-            observation = observations.get(provider_id)
-            cache = _get_or_create_cache(session, paper.id)
-
-            if observation is None:
-                # Requested but not returned: the provider no longer knows this id.
-                cache.refresh_status = "gone"
-                continue
-            cache.refresh_status = "active"
-
-            existing = session.execute(
-                select(CitationSnapshot).where(
-                    CitationSnapshot.paper_id == paper.id,
-                    CitationSnapshot.observed_on == observed_on,
-                    CitationSnapshot.source == "semantic_scholar",
-                )
-            ).scalar_one_or_none()
-            if existing is not None:
-                # Already observed today. Append-only: the existing row stands.
-                continue
-
-            previous = _latest_snapshot(session, paper.id)
-            is_decrease = previous is not None and observation.citation_count < previous.citation_count
-            # `or` short-circuits, so the phantom-recovery lookup only runs when
-            # this snapshot isn't already flagged as a plain decrease.
-            is_anomalous = is_decrease or _is_phantom_recovery(
-                session, paper.id, observation.citation_count, previous, now
-            )
-            if is_anomalous:
-                state.anomalies_detected += 1
-
-            session.add(
-                CitationSnapshot(
-                    paper_id=paper.id,
-                    observed_at=now,
-                    observed_on=observed_on,
-                    # Stored exactly as reported. Clamping a decrease would destroy the
-                    # evidence that a provider record merge happened.
-                    citation_count=observation.citation_count,
-                    influential_citation_count=observation.influential_citation_count,
-                    is_anomalous=is_anomalous,
-                )
-            )
-            state.papers_refreshed += 1
+        # Papers with no provider id can never be refreshed. Record that once and
+        # skip them, rather than counting them as failures on every subsequent run.
+        trackable = []
+        for paper in papers:
+            if not paper.semantic_scholar_id:
+                _get_or_create_cache(session, paper.id).refresh_status = "no_provider_id"
+            else:
+                trackable.append(paper)
         session.flush()
 
-    state.status = "partial" if had_failure else "idle"
-    state.completed_at = datetime.utcnow()
-    session.flush()
-    return state
+        by_provider_id = {p.semantic_scholar_id: p for p in trackable}
+        had_failure = False
+
+        for chunk in _chunks(list(by_provider_id.keys()), batch_size):
+            state.batches_attempted += 1
+            try:
+                observations = client.fetch_batch(chunk)
+            except CitationProviderError as exc:
+                # One bad batch must not cost the whole day's collection.
+                had_failure = True
+                if exc.status_code == 429:
+                    state.rate_limit_events += 1
+                state.papers_failed += len(chunk)
+                state.last_error = str(exc)[:2000]
+                logger.warning("Citation batch failed (%s); continuing with next batch", exc)
+                continue
+            except Exception as exc:  # noqa: BLE001 - one bad batch must not abort the run
+                had_failure = True
+                state.papers_failed += len(chunk)
+                state.last_error = str(exc)[:2000]
+                logger.exception("Unexpected citation batch failure; continuing")
+                continue
+
+            for provider_id in chunk:
+                paper = by_provider_id[provider_id]
+                observation = observations.get(provider_id)
+                cache = _get_or_create_cache(session, paper.id)
+
+                if observation is None:
+                    # Requested but not returned: the provider no longer knows this id.
+                    cache.refresh_status = "gone"
+                    continue
+                cache.refresh_status = "active"
+
+                existing = session.execute(
+                    select(CitationSnapshot).where(
+                        CitationSnapshot.paper_id == paper.id,
+                        CitationSnapshot.observed_on == observed_on,
+                        CitationSnapshot.source == "semantic_scholar",
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    # Already observed today. Append-only: the existing row stands.
+                    continue
+
+                previous = _latest_snapshot(session, paper.id)
+                is_decrease = (
+                    previous is not None and observation.citation_count < previous.citation_count
+                )
+                # `or` short-circuits, so the phantom-recovery lookup only runs when
+                # this snapshot isn't already flagged as a plain decrease.
+                is_anomalous = is_decrease or _is_phantom_recovery(
+                    session, paper.id, observation.citation_count, previous, now
+                )
+                if is_anomalous:
+                    state.anomalies_detected += 1
+
+                session.add(
+                    CitationSnapshot(
+                        paper_id=paper.id,
+                        observed_at=now,
+                        observed_on=observed_on,
+                        # Stored exactly as reported. Clamping a decrease would destroy
+                        # the evidence that a provider record merge happened.
+                        citation_count=observation.citation_count,
+                        influential_citation_count=observation.influential_citation_count,
+                        is_anomalous=is_anomalous,
+                    )
+                )
+                state.papers_refreshed += 1
+            session.flush()
+
+        state.status = "partial" if had_failure else "idle"
+        state.completed_at = datetime.utcnow()
+        session.flush()
+        return state
+    except Exception as exc:
+        # Anything that escapes the per-batch handler above (e.g. a bug in the
+        # anomaly-detection helpers, which run outside that try/except) must not
+        # leave the state row stuck on "running" forever -- that reads identically
+        # to "today's run never started", which hides a real crash from operators.
+        # Commit explicitly: the caller (citations/runner.py) commits only after
+        # this function returns, so without a commit here a re-raised exception
+        # would leave this state change as an uncommitted, and likely rolled-back,
+        # write.
+        state.status = "failed"
+        state.last_error = str(exc)[:2000]
+        state.completed_at = datetime.utcnow()
+        session.commit()
+        raise
