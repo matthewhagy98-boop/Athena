@@ -4,6 +4,8 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from citations.models import CitationSnapshot, CitationVelocityCache
+from citations.provider import CitationObservation
+from citations.refresh import refresh_citations
 from citations.velocity import compute_velocity, recompute_all
 from evidence_engine.db.models import Paper, PaperTopic, Topic
 
@@ -106,6 +108,65 @@ def test_merge_and_recovery_does_not_produce_phantom_velocity():
 
     assert result.status == "insufficient_history"
     assert result.velocity_per_30d is None
+
+
+class _FakeCitationClient:
+    """Reports a single fixed count for whatever ids it's asked about."""
+
+    def __init__(self, count):
+        self.count = count
+
+    def fetch_batch(self, ids):
+        return {i: CitationObservation(i, self.count, None) for i in ids}
+
+
+def test_velocity_still_updates_after_a_merge_and_real_growth(db_session):
+    # End-to-end regression: a merge (240 -> 190 -> 240) is flagged and recovers,
+    # then real monotonic growth continues at ~30-day refresh intervals for far
+    # longer than the 90-day recovery lookback. Before the fix, every later
+    # refresh kept inheriting the anomalous flag (either unconditionally from
+    # `previous`, or -- even with that branch removed -- by re-anchoring the
+    # lookback window on each newly-flagged "recovery tail" snapshot), so
+    # compute_velocity could never find a valid unflagged pair and
+    # velocity_per_30d froze forever at the stale recovery-era value. With the
+    # fix, once the merge (day 20) ages out of the 90-day window, growth is
+    # judged real again and velocity reflects the recent window.
+    paper = Paper(title="Merge then real growth", semantic_scholar_id="s2-velocity-forever")
+    db_session.add(paper)
+    db_session.flush()
+
+    base = datetime(2026, 1, 1, 9, 0)
+    series = [
+        (0, 240),
+        (20, 190),
+        (40, 240),
+        (70, 300),
+        (100, 340),
+        (130, 380),
+        (160, 420),
+        (190, 460),
+        (220, 500),
+        (250, 540),
+    ]
+    for day, count in series:
+        refresh_citations(db_session, _FakeCitationClient(count), now=base + timedelta(days=day))
+
+    recompute_all(db_session, now=base + timedelta(days=250))
+
+    cache = db_session.execute(
+        select(CitationVelocityCache).where(CitationVelocityCache.paper_id == paper.id)
+    ).scalar_one()
+
+    # By hand: snapshots at day 160 (420, not anomalous) and day 250 (540, not
+    # anomalous) are exactly 90 days apart -- the widest pair within
+    # MAX_LOOKBACK_DAYS ending at the most recent snapshot, with no anomalous
+    # snapshot in between. (540-420)/90*30 = 40.00. A frozen/stale computation
+    # would instead report something derived from the day-20..40 recovery window
+    # (0.00/30d) or fail to find any valid pair at all.
+    assert cache.status == "ready"
+    assert cache.velocity_per_30d == Decimal("40.00")
+    assert cache.window_start_observed_at == base + timedelta(days=160)
+    assert cache.window_end_observed_at == base + timedelta(days=250)
 
 
 def test_unsorted_input_is_handled():

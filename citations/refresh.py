@@ -6,15 +6,12 @@ from sqlalchemy.orm import Session
 
 from citations.models import CitationRefreshState, CitationSnapshot, CitationVelocityCache
 from citations.provider import CitationProviderError
+from citations.velocity import MAX_LOOKBACK_DAYS as ANOMALY_RECOVERY_LOOKBACK_DAYS
 from evidence_engine.db.models import Paper
 
 logger = logging.getLogger(__name__)
 
 JOB_NAME = "citation_refresh"
-
-# Matches velocity.MAX_LOOKBACK_DAYS: a recovery beyond this window is treated as
-# genuine growth rather than the tail of an old merge/revert.
-ANOMALY_RECOVERY_LOOKBACK_DAYS = 90
 
 
 def _get_or_create_state(session: Session) -> CitationRefreshState:
@@ -48,19 +45,54 @@ def _latest_snapshot(session: Session, paper_id) -> CitationSnapshot | None:
     ).scalar_one_or_none()
 
 
-def _recent_anomalous_snapshot(session: Session, paper_id, now: datetime) -> CitationSnapshot | None:
-    """Most recent snapshot flagged anomalous within the recovery lookback window."""
-    cutoff = now - timedelta(days=ANOMALY_RECOVERY_LOOKBACK_DAYS)
-    return session.execute(
+def _is_genuine_decrease(session: Session, paper_id, snapshot: CitationSnapshot) -> bool:
+    """True if `snapshot` itself dropped below the count immediately before it.
+
+    Distinguishes an actual provider-merge event from a recovery-tail snapshot
+    that was only flagged because it climbed back over an earlier merge's
+    high-water mark. Recovery-tail snapshots have a count >= their predecessor
+    (they are the "growth" side of the artifact), so this is false for them.
+    """
+    prior = session.execute(
         select(CitationSnapshot)
         .where(
             CitationSnapshot.paper_id == paper_id,
-            CitationSnapshot.is_anomalous.is_(True),
-            CitationSnapshot.observed_at >= cutoff,
+            CitationSnapshot.observed_at < snapshot.observed_at,
         )
         .order_by(CitationSnapshot.observed_at.desc())
         .limit(1)
     ).scalar_one_or_none()
+    return prior is not None and snapshot.citation_count < prior.citation_count
+
+
+def _recent_anomalous_snapshot(session: Session, paper_id, now: datetime) -> CitationSnapshot | None:
+    """Most recent *genuine merge/drop* within the recovery lookback window.
+
+    Only a snapshot that is itself a decrease can anchor the window. A
+    recovery-tail snapshot (flagged solely because it climbed back over the
+    pre-drop high) must not qualify -- if it did, each recovery-tail flag would
+    re-anchor the window on itself, and continued real growth would keep
+    re-triggering the phantom-recovery check indefinitely, long after the
+    original merge has aged out of the lookback period.
+    """
+    cutoff = now - timedelta(days=ANOMALY_RECOVERY_LOOKBACK_DAYS)
+    candidates = (
+        session.execute(
+            select(CitationSnapshot)
+            .where(
+                CitationSnapshot.paper_id == paper_id,
+                CitationSnapshot.is_anomalous.is_(True),
+                CitationSnapshot.observed_at >= cutoff,
+            )
+            .order_by(CitationSnapshot.observed_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    for candidate in candidates:
+        if _is_genuine_decrease(session, paper_id, candidate):
+            return candidate
+    return None
 
 
 def _pre_anomaly_high_water_mark(session: Session, paper_id, anomaly_observed_at: datetime) -> int | None:
@@ -80,15 +112,18 @@ def _is_phantom_recovery(session: Session, paper_id, new_count: int, previous, n
     growth: the paper never actually lost or regained citations, the provider's
     bookkeeping did. Spec Sec 14.3 only flags decreases, which leaves this
     compensating increase unflagged and lets compute_velocity report a large
-    velocity for a paper with zero real growth. So: whenever the previous snapshot
-    is anomalous, or an anomalous snapshot exists within the recovery lookback
-    window, and the new count has climbed back to or past the high-water mark that
-    stood immediately before that anomaly, flag the new snapshot too -- it is the
-    tail of the same artifact, not new evidence.
+    velocity for a paper with zero real growth. So: whenever an anomalous
+    snapshot exists within the recovery lookback window, and the new count has
+    climbed back to or past the high-water mark that stood immediately before
+    that anomaly, flag the new snapshot too -- it is the tail of the same
+    artifact, not new evidence.
+
+    The lookup is always time-bounded (never taken unconditionally from
+    `previous`), so a flag cannot outlive ANOMALY_RECOVERY_LOOKBACK_DAYS: once
+    the most recent anomalous snapshot falls outside the window, subsequent
+    growth is treated as real again, even if `previous` itself was flagged.
     """
-    anomaly = previous if (previous is not None and previous.is_anomalous) else None
-    if anomaly is None:
-        anomaly = _recent_anomalous_snapshot(session, paper_id, now)
+    anomaly = _recent_anomalous_snapshot(session, paper_id, now)
     if anomaly is None:
         return False
     pre_anomaly_high = _pre_anomaly_high_water_mark(session, paper_id, anomaly.observed_at)

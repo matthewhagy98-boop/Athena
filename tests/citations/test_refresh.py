@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -120,6 +120,57 @@ def test_refresh_flags_a_merge_recovery_as_anomalous(db_session):
     )
     assert [s.citation_count for s in snaps] == [240, 190, 240]
     assert [s.is_anomalous for s in snaps] == [False, True, True]
+
+
+def test_anomaly_flag_does_not_propagate_forever(db_session):
+    # Regression guard: a merge (240 -> 190) is flagged, its immediate revert
+    # (190 -> 240) is correctly flagged too as the tail of the same artifact --
+    # but real monotonic growth that follows, at ~30-day refresh intervals, must
+    # stop being flagged once the original merge ages out of the 90-day recovery
+    # lookback window. Before the fix, `_is_phantom_recovery` inherited the
+    # anomalous flag unconditionally from `previous`, so every one of these
+    # refreshes stayed flagged forever, freezing velocity permanently.
+    _paper(db_session, "s2-forever", "Merge then real growth forever")
+    base = datetime(2026, 1, 1, 9, 0)
+    # (day offset, reported count)
+    series = [
+        (0, 240),
+        (20, 190),  # provider merge
+        (40, 240),  # immediate revert -- tail of the same merge, still flagged
+        (70, 300),  # real growth, still inside the 90-day window of day 20
+        (100, 340),  # still inside the window (day20 + 90 = day110)
+        (130, 380),  # now outside the window -- must not be flagged
+        (160, 420),
+        (190, 460),
+        (220, 500),
+        (250, 540),
+    ]
+
+    for day, count in series:
+        refresh_citations(
+            db_session,
+            FakeClient({"s2-forever": CitationObservation("s2-forever", count, None)}),
+            now=base + timedelta(days=day),
+        )
+
+    snaps = (
+        db_session.execute(select(CitationSnapshot).order_by(CitationSnapshot.observed_at))
+        .scalars()
+        .all()
+    )
+    assert [s.citation_count for s in snaps] == [240, 190, 240, 300, 340, 380, 420, 460, 500, 540]
+    assert [s.is_anomalous for s in snaps] == [
+        False,  # initial baseline
+        True,  # the merge itself
+        True,  # immediate revert -- tail of the merge, correctly flagged
+        True,  # day 70 -- still within 90 days of the day-20 merge
+        True,  # day 100 -- still within 90 days of the day-20 merge (day 20 + 90 = day 110)
+        False,  # day 130 -- more than 90 days after the merge: real growth again
+        False,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_refresh_marks_papers_without_provider_id_as_unrefreshable(db_session):
