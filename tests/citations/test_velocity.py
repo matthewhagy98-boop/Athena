@@ -254,6 +254,113 @@ def test_cohort_key_is_stable_for_multi_topic_paper(db_session):
     assert first_key == f"{min(t.id for t in topics)}:2024"
 
 
+def test_percentile_omitted_at_cohort_size_nine(db_session):
+    # MIN_COHORT_SIZE is 10. A cohort of exactly 9 ready papers must get no
+    # percentiles at all; adding a 10th ready paper must switch every member on.
+    topic = Topic(canonical_label="Nine cohort", mesh_id="D_VEL_NINE")
+    db_session.add(topic)
+    db_session.flush()
+    papers = [
+        _make_paper_with_series(db_session, topic, f"Nine {i}", 0, i + 1)
+        for i in range(9)
+    ]
+
+    recompute_all(db_session)
+
+    caches = [
+        db_session.execute(
+            select(CitationVelocityCache).where(CitationVelocityCache.paper_id == p.id)
+        ).scalar_one()
+        for p in papers
+    ]
+    assert all(c.status == "ready" for c in caches)
+    assert all(c.cohort_size == 9 for c in caches)
+    assert all(c.percentile is None for c in caches)
+
+    tenth = _make_paper_with_series(db_session, topic, "Tenth", 0, 100)
+    papers.append(tenth)
+
+    recompute_all(db_session)
+
+    caches = [
+        db_session.execute(
+            select(CitationVelocityCache).where(CitationVelocityCache.paper_id == p.id)
+        ).scalar_one()
+        for p in papers
+    ]
+    assert all(c.cohort_size == 10 for c in caches)
+    assert all(c.percentile is not None for c in caches)
+
+
+def test_percentile_worked_example_returns_88(db_session):
+    # Spec 14.2 worked example: a cohort of 34 ready papers where exactly 30 have a
+    # velocity strictly below the target's. round(100*30/34) = round(88.235...) = 88.
+    topic = Topic(canonical_label="Worked example cohort", mesh_id="D_VEL_88")
+    db_session.add(topic)
+    db_session.flush()
+
+    for i in range(1, 31):
+        _make_paper_with_series(db_session, topic, f"Below {i}", 0, i)
+    target = _make_paper_with_series(db_session, topic, "Target", 0, 100)
+    for i in range(3):
+        _make_paper_with_series(db_session, topic, f"Above {i}", 0, 101 + i)
+
+    recompute_all(db_session)
+
+    cache = db_session.execute(
+        select(CitationVelocityCache).where(CitationVelocityCache.paper_id == target.id)
+    ).scalar_one()
+    assert cache.cohort_size == 34
+    assert cache.percentile == 88
+
+
+def test_percentile_clamped_to_1_for_bottom_paper(db_session):
+    # The strictly slowest paper in a cohort of 10 must read 1, never 0.
+    topic = Topic(canonical_label="Bottom clamp cohort", mesh_id="D_VEL_BOTTOM")
+    db_session.add(topic)
+    db_session.flush()
+    papers = [
+        _make_paper_with_series(db_session, topic, f"Ranked {i}", 0, i + 1)
+        for i in range(10)
+    ]
+    slowest = papers[0]  # velocity 1, strictly below every other paper's velocity.
+
+    recompute_all(db_session)
+
+    cache = db_session.execute(
+        select(CitationVelocityCache).where(CitationVelocityCache.paper_id == slowest.id)
+    ).scalar_one()
+    assert cache.percentile == 1
+
+
+def test_cohort_bands_are_fixed_not_sliding(db_session):
+    # BAND_WIDTH_YEARS=4, anchored on years divisible by 4: 2024-2027 is one band,
+    # 2020-2023 is the previous one. This pins both the width and the anchoring.
+    topic = Topic(canonical_label="Band topic", mesh_id="D_VEL_BAND")
+    db_session.add(topic)
+    db_session.flush()
+    papers = {
+        year: _make_paper_with_series(
+            db_session, topic, f"Paper {year}", 0, 10, pub_date=date(year, 6, 1)
+        )
+        for year in (2023, 2024, 2025, 2026, 2027)
+    }
+
+    recompute_all(db_session)
+
+    keys = {
+        year: db_session.execute(
+            select(CitationVelocityCache).where(CitationVelocityCache.paper_id == papers[year].id)
+        )
+        .scalar_one()
+        .cohort_key
+        for year in papers
+    }
+    assert keys[2024] == keys[2025] == keys[2026] == keys[2027] == f"{topic.id}:2024"
+    assert keys[2023] == f"{topic.id}:2020"
+    assert keys[2023] != keys[2024]
+
+
 def test_shrinking_cohort_does_not_leave_a_stale_percentile(db_session):
     # A paper that drops out of a large cohort must lose its percentile, not keep
     # a value computed when the cohort was big enough.
