@@ -392,3 +392,34 @@ def test_shrinking_cohort_does_not_leave_a_stale_percentile(db_session):
         select(CitationVelocityCache).where(CitationVelocityCache.paper_id == target.id)
     ).scalar_one()
     assert cache.percentile is None
+
+
+def test_cache_reset_when_all_snapshots_removed_clears_cohort_key(db_session):
+    # A cache row whose paper lost all its snapshots is fully reset by recompute_all
+    # (the paper no longer appears in snapshots_by_paper at all). cohort_key must be
+    # cleared along with status/velocity/percentile, not left pointing at a cohort
+    # this row no longer has any data to justify membership in.
+    topic = Topic(canonical_label="Full removal topic", mesh_id="D_VEL_RESET")
+    db_session.add(topic)
+    db_session.flush()
+    paper = _make_paper_with_series(db_session, topic, "Vanishing paper", 0, 10)
+    recompute_all(db_session)
+
+    cache = db_session.execute(
+        select(CitationVelocityCache).where(CitationVelocityCache.paper_id == paper.id)
+    ).scalar_one()
+    assert cache.cohort_key is not None
+
+    for snap in db_session.execute(
+        select(CitationSnapshot).where(CitationSnapshot.paper_id == paper.id)
+    ).scalars().all():
+        db_session.delete(snap)
+    db_session.flush()
+
+    recompute_all(db_session)
+
+    cache = db_session.execute(
+        select(CitationVelocityCache).where(CitationVelocityCache.paper_id == paper.id)
+    ).scalar_one()
+    assert cache.status == "insufficient_history"
+    assert cache.cohort_key is None

@@ -204,7 +204,7 @@ def refresh_citations(
             session.flush()
 
         state.status = "partial" if had_failure else "idle"
-        state.completed_at = datetime.utcnow()
+        state.completed_at = now
         session.flush()
         return state
     except Exception as exc:
@@ -218,6 +218,6 @@ def refresh_citations(
         # write.
         state.status = "failed"
         state.last_error = str(exc)[:2000]
-        state.completed_at = datetime.utcnow()
+        state.completed_at = now
         session.commit()
         raise

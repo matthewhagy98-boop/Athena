@@ -163,6 +163,7 @@ def recompute_all(session: Session, now: datetime | None = None) -> int:
         cache.observation_count = 0
         cache.first_observed_at = None
         cache.anomaly_count = 0
+        cache.cohort_key = None
         cache.percentile = None
         cache.cohort_size = 0
         cache.computed_at = now
