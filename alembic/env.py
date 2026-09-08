@@ -10,6 +10,7 @@ from evidence_engine.db.models import Base
 import digest.models  # noqa: F401 - import to register digest models with Base.metadata
 import webapp.models  # noqa: F401 - import to register webapp models with Base.metadata
 import enterprise_api.models  # noqa: F401 - import to register enterprise_api models with Base.metadata
+import citations.models  # noqa: F401 - import to register citation models with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
