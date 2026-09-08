@@ -173,6 +173,40 @@ def test_anomaly_flag_does_not_propagate_forever(db_session):
     ]
 
 
+def test_second_merge_recovery_is_flagged(db_session):
+    # Reviewer's reproduction: two independent merges. The first merge (500 -> 300)
+    # recovers only partway (350), which is correctly unflagged real growth. The
+    # second merge (350 -> 100) then recovers exactly back to its own pre-drop count
+    # (350). That bounce must be flagged too -- judging it against the all-time high
+    # of 500 (left over from the first merge) instead of its own merge's pre-drop
+    # count of 350 was the bug: the day-140 bounce slipped through unflagged and
+    # compute_velocity read the (100 -> 350) pair as a fabricated 375.00/30d.
+    _paper(db_session, "s2-double-merge", "Two independent merges")
+    base = datetime(2026, 1, 1, 9, 0)
+    series = [
+        (0, 500),
+        (20, 300),  # merge 1
+        (50, 350),  # real growth off the merge-1 baseline, not a full recovery
+        (120, 100),  # merge 2
+        (140, 350),  # merge-2's own bounce back to its pre-drop count -- must be flagged
+    ]
+
+    for day, count in series:
+        refresh_citations(
+            db_session,
+            FakeClient({"s2-double-merge": CitationObservation("s2-double-merge", count, None)}),
+            now=base + timedelta(days=day),
+        )
+
+    snaps = (
+        db_session.execute(select(CitationSnapshot).order_by(CitationSnapshot.observed_at))
+        .scalars()
+        .all()
+    )
+    assert [s.citation_count for s in snaps] == [500, 300, 350, 100, 350]
+    assert [s.is_anomalous for s in snaps] == [False, True, False, True, True]
+
+
 def test_refresh_marks_papers_without_provider_id_as_unrefreshable(db_session):
     paper = Paper(title="No provider id")
     db_session.add(paper)
