@@ -16,6 +16,32 @@ repo root is not on `sys.path` that way — the same is true of every other scri
 Schedule once daily. Running more than once a day is harmless: snapshots are unique
 per `(paper, day, source)`, so repeat runs skip papers already observed today.
 
+### Scheduled collection
+
+`scripts/cron_refresh_citations.sh` is the cron entry point. It exists because cron
+runs with a minimal environment and an arbitrary working directory, and this job
+cannot tolerate either: settings load from a *relative* `.env`, the script must be
+invoked as a module, and the venv needs an `arch -x86_64` prefix on Apple Silicon.
+The wrapper handles all three, sets `CITATION_TRACKING_ENABLED=true`, and logs every
+run with a timestamp to `~/Library/Logs/athena-citations.log` (rotated at 5 MB).
+
+Installed as:
+
+    0 4 * * * /Users/matthewhagy/Athena/scripts/cron_refresh_citations.sh
+
+Check that it is running:
+
+    tail ~/Library/Logs/athena-citations.log
+
+A healthy run ends with `completed successfully`. A failed run logs the provider or
+database error and exits non-zero — most often because Postgres is not up. Nothing
+needs repairing after a failed run: collection is idempotent per day, so the next
+run resumes normally, and a same-day catch-up can be forced by invoking the wrapper
+by hand.
+
+To stop collection, set the flag to false in the wrapper or remove the cron entry.
+Do **not** roll back the migration — see Rollback below.
+
 With the flag unset or false the job exits immediately, without contacting the
 provider, and prints `Citation tracking disabled; nothing to do.`
 
