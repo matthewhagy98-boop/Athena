@@ -32,6 +32,19 @@ def reset_leaked_state():
         # saved_searches has no ON DELETE CASCADE, so dependents go first.
         conn.execute(text(f"DELETE FROM saved_searches WHERE user_id IN ({anon})"))
         conn.execute(text(f"DELETE FROM users WHERE id IN ({anon})"))
+        # citation_refresh_state is a single-row watermark keyed on job_name, and
+        # the collection job commits it. Once the scheduled run has executed even
+        # once, a test inserting its own row hits the uq_citation_refresh_job
+        # unique constraint. citation_velocity_cache is likewise committed by the
+        # job and is unique per paper. Both are fully rebuildable from
+        # citation_snapshots by recompute_all.
+        #
+        # citation_snapshots is deliberately NOT cleared: it is append-only, it is
+        # the system of record, and the provider reports only current counts, so a
+        # deleted snapshot is gone for good. Tests must therefore scope their own
+        # assertions by paper rather than assuming an empty table.
+        conn.execute(text("DELETE FROM citation_refresh_state"))
+        conn.execute(text("DELETE FROM citation_velocity_cache"))
     yield
 
 
