@@ -9,7 +9,18 @@ from evidence_engine.db.models import Paper
 
 
 def _iso(value) -> str | None:
-    return value.isoformat() if value is not None else None
+    """Serialize a UTC timestamp with an explicit Z suffix.
+
+    Every timestamp in this package is naive UTC (the models default to
+    datetime.utcnow), and a bare isoformat() emits no offset. JavaScript parses an
+    offset-less date-time as LOCAL time, so the frontend would shift each value by
+    the viewer's UTC offset -- enough to flip the "as of N days ago" label, or to
+    push a computed_at across the 3-day aging or 21-day suppression threshold, for
+    anyone west of UTC.
+    """
+    if value is None:
+        return None
+    return value.isoformat() + "Z"
 
 
 def _empty_block(is_retracted: bool) -> dict:

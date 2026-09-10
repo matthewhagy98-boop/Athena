@@ -39,7 +39,8 @@ def test_history_window_anchors_on_newest_observation_not_wall_clock(db_session)
     assert [o["citation_count"] for o in result["observations"]] == [150]
     # first_observed_at always reports the true start of tracking, even when the
     # requested window excludes it -- that is what "Tracking since {date}" renders.
-    assert result["first_observed_at"] == datetime(2024, 1, 1, 4, 0).isoformat()
+    # The Z suffix is required: the browser would otherwise read it as local time.
+    assert result["first_observed_at"] == "2024-01-01T04:00:00Z"
 
 
 def test_history_window_includes_everything_when_days_span_the_series(db_session):
