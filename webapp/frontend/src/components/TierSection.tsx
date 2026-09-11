@@ -1,4 +1,4 @@
-import type { PaperRow } from "../api/types";
+import type { PaperRow, PaperVelocity } from "../api/types";
 import { ResearchCard } from "./ResearchCard";
 
 export function TierSection({
@@ -7,12 +7,14 @@ export function TierSection({
   emptyMessage,
   selectedIds,
   onToggleSelect,
+  velocities,
 }: {
   title: string;
   papers: PaperRow[];
   emptyMessage: string;
   selectedIds: Set<string>;
   onToggleSelect: (paperId: string) => void;
+  velocities?: Record<string, PaperVelocity>;
 }) {
   return (
     <section className="mb-4">
@@ -29,7 +31,13 @@ export function TierSection({
         </div>
       ) : (
         papers.map((row) => (
-          <ResearchCard key={row.paper.id} row={row} checked={selectedIds.has(row.paper.id)} onToggleSelect={onToggleSelect} />
+          <ResearchCard
+            key={row.paper.id}
+            row={row}
+            checked={selectedIds.has(row.paper.id)}
+            onToggleSelect={onToggleSelect}
+            velocity={velocities?.[row.paper.id]}
+          />
         ))
       )}
     </section>

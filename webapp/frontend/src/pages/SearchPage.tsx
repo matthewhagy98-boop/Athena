@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useCreateSavedSearch, useSearch, useTopics } from "../api/hooks";
+import { useCreateSavedSearch, usePaperVelocities, useSearch, useTopics } from "../api/hooks";
 import type { SearchParams } from "../api/types";
 import { CompareTray } from "../components/CompareTray";
 import { FilterSidebar } from "../components/FilterSidebar";
@@ -35,6 +35,17 @@ export function SearchPage() {
   const { data, isLoading, isError } = useSearch(params);
   const { data: topics } = useTopics();
   const createSavedSearch = useCreateSavedSearch();
+
+  const paperIds = useMemo(() => (data?.rows ?? []).map((r) => r.paper.id), [data]);
+  const velocities = usePaperVelocities(paperIds);
+  const velocityMap = velocities.data?.velocities;
+
+  // One notice for the whole page rather than identical text on every card. During
+  // the collection warm-up this is the expected state, not an error -- role="status".
+  const allEmpty =
+    velocityMap !== undefined &&
+    paperIds.length > 0 &&
+    paperIds.every((id) => velocityMap[id]?.status !== "ready");
 
   function applyParams(next: SearchParams) {
     const entries = Object.entries(next).filter(([, v]) => v);
@@ -100,10 +111,16 @@ export function SearchPage() {
 
         {data && (
           <>
-            <TierSection title="Established evidence" papers={byTier.established} emptyMessage="No established papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} />
-            <TierSection title="Emerging evidence" papers={byTier.emerging} emptyMessage="No emerging papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} />
-            <TierSection title="Speculation and hypotheses" papers={byTier.speculative} emptyMessage="No speculative papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} />
-            <TierSection title="Not yet scored" papers={byTier.unscored} emptyMessage="All matching papers have been scored." selectedIds={selected} onToggleSelect={toggleSelect} />
+            {allEmpty && (
+              <p role="status" className="mb-4 rounded border border-hairline bg-surface-container-low p-2 text-xs text-on-surface-variant">
+                Citation tracking is still building history for these papers. Velocity
+                appears once a paper has been observed twice, at least 14 days apart.
+              </p>
+            )}
+            <TierSection title="Established evidence" papers={byTier.established} emptyMessage="No established papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} velocities={velocityMap} />
+            <TierSection title="Emerging evidence" papers={byTier.emerging} emptyMessage="No emerging papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} velocities={velocityMap} />
+            <TierSection title="Speculation and hypotheses" papers={byTier.speculative} emptyMessage="No speculative papers match the current filters." selectedIds={selected} onToggleSelect={toggleSelect} velocities={velocityMap} />
+            <TierSection title="Not yet scored" papers={byTier.unscored} emptyMessage="All matching papers have been scored." selectedIds={selected} onToggleSelect={toggleSelect} velocities={velocityMap} />
           </>
         )}
       </div>
