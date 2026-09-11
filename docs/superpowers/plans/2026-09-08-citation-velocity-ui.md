@@ -1737,7 +1737,11 @@ export function SavedSearchVelocityTrend({
 
 - [ ] **Step 5: Mount both**
 
-In `src/pages/TopicDetailPage.tsx`, render `<CitationHistoryChart paperId={...} />` for the topic's most-cited paper, or omit it if no single paper is in focus — the topic page shows a table, so add the chart only if a paper row is expandable. If there is no natural single-paper focus, mount the chart on the Compare page's paper cards instead and note the deviation in the task report; do not invent a new route.
+**Decided 2026-09-10: mount the history chart on the Compare page's paper cards.** `TopicDetailPage` renders a flat table with no single-paper focus, and the spec's assumed expandable row does not exist; adding row expansion would be real scope for a secondary surface. Comparison is also where a citation trajectory is most decision-relevant — it is the screen where a user is actively weighing papers against each other.
+
+So: in `src/pages/ComparePage.tsx`, render `<CitationHistoryChart paperId={row.paper.id} />` inside each paper card in paper mode, below the existing abstract. Do **not** modify `TopicDetailPage.tsx`, and do not add a new route.
+
+Note the load implication: Compare holds up to 10 papers, so this mounts up to 10 independent `useCitationHistory` queries. That is acceptable — each is a single indexed read bounded by the `days` window, and unlike the saved-search endpoint it does not re-execute a search. Do not batch it; a per-card query keeps each card's loading and error states independent, which is what the silent-collapse requirement needs.
 
 In `src/pages/SavedSearchesPage.tsx`, render `<SavedSearchVelocityTrend savedSearchId={saved.id} userId={userId} />` inside each row, but only for the **first 10 rows** — the endpoint re-executes a search per call. Slice explicitly:
 
@@ -1778,4 +1782,4 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 
 **Type consistency.** `PaperVelocity` fields match between Task 4's TypeScript and Task 1's Python serialization field-for-field, including `computed_at` being nullable (Task 1 emits `None` for a paper with no cache row — Task 4's type says `string | null`, and Task 5's `daysSince` handles null). `VelocitySparkline`'s `points: number[]` matches its only caller. `saved_search_velocity(session, saved_search, weeks)` is called in Task 3 with exactly that signature.
 
-**One thing the implementer must resolve.** Task 7 Step 5 leaves the Topic Detail mount point genuinely open, because the current page renders a flat papers table with no single-paper focus and the spec assumes an expandable row. The task states the fallback (mount on Compare cards) and requires the deviation be reported. That is a real ambiguity in the design, not a gap in this plan — it should be settled with the user before Task 7 rather than guessed at.
+**Resolved 2026-09-10.** Task 7's mount point was genuinely ambiguous — the current Topic Detail page renders a flat papers table with no single-paper focus, while the spec assumes an expandable row. Settled with the user: the history chart mounts on the **Compare page's paper cards**, and `TopicDetailPage` is not modified. Task 7 Step 5 now carries that as a definite instruction rather than a branch, so no implementer has to guess.
