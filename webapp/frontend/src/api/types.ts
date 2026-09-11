@@ -62,3 +62,49 @@ export interface TimelineBucket {
   event_type: string;
   count: number;
 }
+
+export type VelocityStatus = "ready" | "insufficient_history" | "unrefreshable";
+
+export interface PaperVelocity {
+  status: VelocityStatus;
+  velocity_per_30d: number | null;
+  window_start_observed_at: string | null;
+  window_end_observed_at: string | null;
+  observation_count: number;
+  first_observed_at: string | null;
+  percentile: number | null;
+  cohort_size: number;
+  is_retracted: boolean;
+  computed_at: string | null;
+}
+
+export interface VelocityResponse {
+  velocities: Record<string, PaperVelocity>;
+}
+
+export interface CitationObservation {
+  observed_on: string;
+  citation_count: number;
+  is_anomalous: boolean;
+}
+
+export interface CitationHistoryResponse {
+  paper_id: string;
+  observations: CitationObservation[];
+  first_observed_at: string | null;
+  source: string;
+}
+
+export interface SavedSearchVelocityPoint {
+  week_start: string;
+  median_velocity_per_30d: number;
+}
+
+export interface SavedSearchVelocityResponse {
+  status: "ready" | "insufficient_coverage";
+  papers_total: number;
+  papers_examined: number;
+  papers_with_history: number;
+  series: SavedSearchVelocityPoint[];
+  computed_at: string;
+}
