@@ -6,13 +6,21 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from citations.aggregate import saved_search_velocity
+from citations.read import get_citation_history, get_paper_velocities
 from digest.models import User
 from digest.profiles import create_anonymous_user
-from evidence_engine.db.models import EvidenceTier, PaperTopic, StudyType, Topic
+from evidence_engine.db.models import EvidenceTier, Paper, PaperTopic, StudyType, Topic
 from evidence_engine.db.session import SessionLocal
 
 from webapp.compare import compare_papers, compare_topics
-from webapp.saved_searches import create_saved_search, delete_saved_search, list_saved_searches, run_saved_search
+from webapp.saved_searches import (
+    _get_owned_saved_search,
+    create_saved_search,
+    delete_saved_search,
+    list_saved_searches,
+    run_saved_search,
+)
 from webapp.search import SearchFilters, search_papers
 from webapp.visualizations import change_timeline, tier_distribution
 
@@ -204,6 +212,46 @@ def timeline_endpoint(
     return [
         {"bucket_date": b.bucket_date.isoformat(), "event_type": b.event_type.value, "count": b.count} for b in buckets
     ]
+
+
+MAX_VELOCITY_IDS = 100
+
+
+@app.get("/papers/velocity")
+def paper_velocity_endpoint(
+    paper_ids: list[uuid.UUID] = Query(default_factory=list), db: Session = Depends(get_db)
+) -> dict:
+    if not paper_ids or len(paper_ids) > MAX_VELOCITY_IDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"paper_ids must contain between 1 and {MAX_VELOCITY_IDS} identifiers",
+        )
+    velocities = get_paper_velocities(db, paper_ids)
+    return {"velocities": {str(pid): block for pid, block in velocities.items()}}
+
+
+@app.get("/papers/{paper_id}/citation-history")
+def citation_history_endpoint(
+    paper_id: uuid.UUID, days: int = Query(default=365, ge=30, le=1095), db: Session = Depends(get_db)
+) -> dict:
+    if db.get(Paper, paper_id) is None:
+        raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+    return get_citation_history(db, paper_id, days=days)
+
+
+@app.get("/saved-searches/{saved_search_id}/velocity")
+def saved_search_velocity_endpoint(
+    saved_search_id: uuid.UUID,
+    user_id: uuid.UUID,
+    weeks: int = Query(default=12, ge=4, le=52),
+    db: Session = Depends(get_db),
+) -> dict:
+    user = _require_user(db, user_id)
+    try:
+        saved = _get_owned_saved_search(db, user, saved_search_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return saved_search_velocity(db, saved, weeks=weeks)
 
 
 from pathlib import Path
