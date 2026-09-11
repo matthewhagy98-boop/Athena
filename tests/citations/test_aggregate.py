@@ -1,7 +1,14 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from citations.aggregate import MIN_COVERAGE_RATIO, median, saved_search_velocity
+from citations.aggregate import (
+    MAX_AGGREGATE_PAPERS,
+    MIN_COVERAGE_RATIO,
+    _as_date,
+    _as_uuid,
+    median,
+    saved_search_velocity,
+)
 from citations.models import CitationVelocityCache
 from digest.profiles import create_user
 from evidence_engine.db.models import (
@@ -62,6 +69,29 @@ def _topic_with_papers(db_session, label, count, velocity, weeks_ago=1):
     return topic
 
 
+def _lean_matching_papers(db_session, topic, count, base_date=date(2026, 8, 1)):
+    # Minimal fixture for search_papers to match: Paper + PaperTopic + a NEW_PAPER
+    # ChangeEvent (to trigger reindexing) -- no Score, no CitationVelocityCache.
+    # pub_date is staggered so search ordering (publication_date desc) is
+    # deterministic: paper 0 is newest, paper (count-1) is oldest.
+    papers = []
+    for i in range(count):
+        paper = Paper(
+            title=f"{topic.canonical_label} lean paper {i}",
+            pub_date=base_date - timedelta(days=i),
+        )
+        db_session.add(paper)
+        db_session.flush()
+        db_session.add(PaperTopic(paper_id=paper.id, topic_id=topic.id))
+        db_session.add(
+            ChangeEvent(topic_id=topic.id, paper_id=paper.id, event_type=ChangeEventType.NEW_PAPER)
+        )
+        papers.append(paper)
+    db_session.flush()
+    sync_search_index(db_session)
+    return papers
+
+
 def _saved_search(db_session, topic):
     user = create_user(db_session, f"agg-{topic.mesh_id}@example.com")
     saved = SavedSearch(
@@ -80,6 +110,7 @@ def test_ready_when_coverage_is_sufficient(db_session):
 
     assert result["status"] == "ready"
     assert result["papers_total"] == 12
+    assert result["papers_examined"] == 12
     assert result["papers_with_history"] == 12
     assert result["series"], "expected at least one weekly point"
     assert all(p["median_velocity_per_30d"] == 4.0 for p in result["series"])
@@ -243,3 +274,99 @@ def test_string_dates_in_query_params_still_return_ready(db_session):
     assert result["status"] == "ready"
     assert result["papers_total"] == 12
     assert result["papers_with_history"] == 12
+
+
+def test_papers_total_reports_the_true_match_count_not_the_cap(db_session):
+    # 201 matching papers, one more than MAX_AGGREGATE_PAPERS: papers_total must
+    # report the true unbounded match count, while papers_examined stays capped at
+    # what was actually inspected. Reporting len(paper_ids) for papers_total would
+    # make a 201-paper search indistinguishable from a genuine 200-paper search.
+    topic = Topic(canonical_label="Overflow topic", mesh_id="D_AGG_OVERFLOW")
+    db_session.add(topic)
+    db_session.flush()
+    _lean_matching_papers(db_session, topic, count=MAX_AGGREGATE_PAPERS + 1)
+    saved = _saved_search(db_session, topic)
+
+    result = saved_search_velocity(db_session, saved, weeks=12)
+
+    assert result["papers_total"] == MAX_AGGREGATE_PAPERS + 1
+    assert result["papers_examined"] == MAX_AGGREGATE_PAPERS
+    assert result["papers_total"] > result["papers_examined"]
+
+
+def test_coverage_ratio_uses_examined_not_total(db_session):
+    # 250 matching papers (over the cap), so only the 200 newest are examined.
+    # 60 of those 200 examined papers have ready history: 60/200 = 0.30 clears the
+    # MIN_COVERAGE_RATIO floor, but 60/250 = 0.24 would fall below it. If the
+    # denominator were ever changed back to papers_total, this test pins the
+    # regression by failing.
+    topic = Topic(canonical_label="Large saved search topic", mesh_id="D_AGG_LARGE")
+    db_session.add(topic)
+    db_session.flush()
+    total_papers = 250
+    papers_with_history = 60
+    assert papers_with_history / MAX_AGGREGATE_PAPERS >= MIN_COVERAGE_RATIO
+    assert papers_with_history / total_papers < MIN_COVERAGE_RATIO
+
+    papers = _lean_matching_papers(db_session, topic, count=total_papers)
+    window_end = datetime(2026, 8, 1) - timedelta(weeks=1)
+    # Papers are ordered newest-first (index 0 is newest), so the first
+    # papers_with_history papers are guaranteed to land within the 200 examined.
+    for paper in papers[:papers_with_history]:
+        db_session.add(
+            CitationVelocityCache(
+                paper_id=paper.id,
+                status="ready",
+                velocity_per_30d=Decimal("4.00"),
+                window_end_observed_at=window_end,
+            )
+        )
+    db_session.flush()
+    saved = _saved_search(db_session, topic)
+
+    result = saved_search_velocity(db_session, saved, weeks=12)
+
+    assert result["status"] == "ready"
+    assert result["papers_total"] == total_papers
+    assert result["papers_examined"] == MAX_AGGREGATE_PAPERS
+    assert result["papers_with_history"] == papers_with_history
+
+
+def test_as_uuid_degrades_on_malformed_input():
+    assert _as_uuid("not-a-uuid") is None
+    assert _as_uuid("") is None
+    assert _as_uuid(None) is None
+    assert _as_uuid(12345) is None
+
+
+def test_as_date_degrades_on_malformed_input():
+    assert _as_date("not-a-date") is None
+    assert _as_date("2026-13-45") is None
+    assert _as_date("") is None
+    assert _as_date(None) is None
+
+
+def test_malformed_topic_id_in_query_params_degrades_to_no_filter(db_session):
+    # A corrupted topic_id in a saved search's query_params must drop the filter,
+    # not raise. This broadens the population to all papers rather than the topic's
+    # papers, which is the intended (if surprising) contract -- see the comment on
+    # _as_uuid. We don't assert an exact papers_total: dropping the filter means the
+    # (unfiltered) search also picks up any other papers already committed in the
+    # database (e.g. seed/demo data), which this test doesn't control. What pins the
+    # fix is that it doesn't raise, and that the population is *at least* this
+    # topic's fixture papers -- proving the filter was dropped, not narrowed to zero.
+    topic = _topic_with_papers(db_session, "Malformed filter topic", count=12, velocity=3.0)
+    user = create_user(db_session, f"agg-malformed-{topic.mesh_id}@example.com")
+    saved = SavedSearch(
+        user_id=user.id,
+        name="Malformed filter search",
+        query_params={"topic_id": "not-a-uuid"},
+    )
+    db_session.add(saved)
+    db_session.flush()
+
+    result = saved_search_velocity(db_session, saved, weeks=12)
+
+    assert result["status"] in ("ready", "insufficient_coverage")
+    assert result["papers_total"] >= 12
+    assert result["papers_examined"] >= 12

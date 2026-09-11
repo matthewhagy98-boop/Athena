@@ -24,6 +24,11 @@ def median(values: list[float]) -> float | None:
 
 
 def _as_uuid(value):
+    # Risk: a corrupted/malformed topic_id degrades to "no filter" rather than a
+    # clean zero-match, which *broadens* the population to unrelated papers instead
+    # of reporting nothing. That is the intended contract (query_params is
+    # unvalidated JSONB and may predate any given filter shape), but it is the kind
+    # of silent widening a reader would not expect -- hence this note.
     try:
         return uuid.UUID(value) if value else None
     except (ValueError, AttributeError, TypeError):
@@ -72,7 +77,12 @@ def saved_search_velocity(
         session, query=params.get("q"), filters=filters, page=1, page_size=MAX_AGGREGATE_PAPERS
     )
     paper_ids = [row.paper.id for row in page.rows]
-    papers_total = len(paper_ids)
+    # page.total is the true, unbounded match count; paper_ids is capped at
+    # MAX_AGGREGATE_PAPERS. Report both rather than collapsing them, so a search
+    # that matches more papers than the cap isn't indistinguishable from one that
+    # genuinely matches exactly the cap.
+    papers_total = page.total
+    papers_examined = len(paper_ids)
 
     caches = []
     if paper_ids:
@@ -89,10 +99,17 @@ def saved_search_velocity(
     papers_with_history = len(caches)
 
     computed_at = now.isoformat()
-    if papers_total == 0 or papers_with_history / papers_total < MIN_COVERAGE_RATIO:
+    # Coverage is measured against papers_examined (the ≤ MAX_AGGREGATE_PAPERS
+    # papers actually inspected), not papers_total (the true, unbounded match
+    # count). Dividing by the true total would systematically under-report
+    # coverage for any saved search matching more papers than the cap, so a large
+    # search would read "not enough history" indefinitely even when the sampled
+    # papers are well covered. Do not "fix" this back to papers_total.
+    if papers_examined == 0 or papers_with_history / papers_examined < MIN_COVERAGE_RATIO:
         return {
             "status": "insufficient_coverage",
             "papers_total": papers_total,
+            "papers_examined": papers_examined,
             "papers_with_history": papers_with_history,
             "series": [],
             "computed_at": computed_at,
@@ -116,6 +133,7 @@ def saved_search_velocity(
     return {
         "status": "ready",
         "papers_total": papers_total,
+        "papers_examined": papers_examined,
         "papers_with_history": papers_with_history,
         "series": series,
         "computed_at": computed_at,
