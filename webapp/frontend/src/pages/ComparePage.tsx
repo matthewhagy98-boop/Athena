@@ -1,5 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { useComparePapers, useCompareTopics, useTopics } from "../api/hooks";
+import { CitationHistoryChart } from "../components/CitationHistoryChart";
 import { EvidenceIndicator } from "../components/EvidenceIndicator";
 
 function UnresolvedNotice({ ids }: { ids: string[] }) {
@@ -65,6 +66,9 @@ export function ComparePage() {
                     {row.paper.abstract && (
                       <p className="font-serif text-sm leading-relaxed text-on-surface-variant">{row.paper.abstract}</p>
                     )}
+                    <div className="mt-3">
+                      <CitationHistoryChart paperId={row.paper.id} />
+                    </div>
                   </div>
                 ))}
               </div>
