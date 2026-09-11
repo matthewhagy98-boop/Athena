@@ -8,7 +8,7 @@ from citations.models import CitationSnapshot, CitationVelocityCache
 from evidence_engine.db.models import Paper
 
 
-def _iso(value) -> str | None:
+def iso_utc(value) -> str | None:
     """Serialize a UTC timestamp with an explicit Z suffix.
 
     Every timestamp in this package is naive UTC (the models default to
@@ -73,14 +73,14 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
             "velocity_per_30d": float(cache.velocity_per_30d)
             if cache.velocity_per_30d is not None
             else None,
-            "window_start_observed_at": _iso(cache.window_start_observed_at),
-            "window_end_observed_at": _iso(cache.window_end_observed_at),
+            "window_start_observed_at": iso_utc(cache.window_start_observed_at),
+            "window_end_observed_at": iso_utc(cache.window_end_observed_at),
             "observation_count": cache.observation_count,
-            "first_observed_at": _iso(cache.first_observed_at),
+            "first_observed_at": iso_utc(cache.first_observed_at),
             "percentile": cache.percentile,
             "cohort_size": cache.cohort_size,
             "is_retracted": is_retracted,
-            "computed_at": _iso(cache.computed_at),
+            "computed_at": iso_utc(cache.computed_at),
         }
     return out
 
@@ -115,6 +115,6 @@ def get_citation_history(session: Session, paper_id: uuid.UUID, days: int) -> di
             }
             for s in windowed
         ],
-        "first_observed_at": _iso(snapshots[0].observed_at) if snapshots else None,
+        "first_observed_at": iso_utc(snapshots[0].observed_at) if snapshots else None,
         "source": snapshots[0].source if snapshots else "semantic_scholar",
     }

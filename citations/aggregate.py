@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from citations.models import CitationVelocityCache
+from citations.read import iso_utc
 from webapp.search import SearchFilters, search_papers
 
 MAX_AGGREGATE_PAPERS = 200
@@ -98,7 +99,11 @@ def saved_search_velocity(
         )
     papers_with_history = len(caches)
 
-    computed_at = now.isoformat()
+    # Same UTC-suffix requirement as citations/read.py: a bare isoformat() emits no
+    # offset, and JavaScript parses an offset-less date-time as LOCAL, shifting the
+    # value by the viewer's offset. Commit b515b3a fixed this in read.py and missed
+    # this sibling call site.
+    computed_at = iso_utc(now)
     # Coverage is measured against papers_examined (the ≤ MAX_AGGREGATE_PAPERS
     # papers actually inspected), not papers_total (the true, unbounded match
     # count). Dividing by the true total would systematically under-report
