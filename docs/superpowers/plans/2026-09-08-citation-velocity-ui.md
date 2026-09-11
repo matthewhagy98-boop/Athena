@@ -1474,6 +1474,27 @@ Render the notice above the tier sections:
 
 and pass `velocities={velocityMap}` to each of the four `TierSection`s.
 
+- [ ] **Step 5b: Add a default `/papers/velocity` handler to the shared MSW server**
+
+**This step is required and was missing from the plan's first draft.** `src/test/setup.ts:30` starts MSW with `onUnhandledRequest: "error"`, and the pre-existing `src/pages/SearchPage.test.tsx` registers handlers only for `/search` and `/topics`. The moment `SearchPage` mounts `usePaperVelocities`, every one of those pre-existing tests fires an unhandled `/papers/velocity` request and fails — a break caused by this task, in tests it never touches.
+
+Fix it in the shared server rather than per-file, because the same trap waits for every future page that mounts velocity. In `src/test/server.ts`, register a default handler returning an empty map:
+
+```ts
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+
+// Velocity is supplementary: its absence must never break a page, in production or
+// in tests. A default empty map means any page that mounts usePaperVelocities gets
+// a benign response without every test file having to know about it. Tests that
+// assert velocity behavior override this with server.use().
+export const server = setupServer(
+  http.get("/papers/velocity", () => HttpResponse.json({ velocities: {} })),
+);
+```
+
+Confirm afterwards that `src/pages/SearchPage.test.tsx` still passes **unmodified** — if it needed editing, the default handler is not doing its job. Note in your report whether the pre-existing tests passed untouched.
+
 - [ ] **Step 6: Run all tests and build**
 
 Run from `webapp/frontend`: `npx vitest run && npm run build`
