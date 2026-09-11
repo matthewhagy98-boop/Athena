@@ -32,6 +32,13 @@ test("shows the percentile with age-and-topic scoping", () => {
   expect(screen.getByText(/top 12% for its age in this topic/i)).toBeInTheDocument();
 });
 
+test("the percentile tooltip is keyboard-reachable", () => {
+  render(<CitationVelocityBadge velocity={velocity()} isRetracted={false} />);
+
+  const percentileEl = screen.getByText(/top 12% for its age in this topic/i);
+  expect(percentileEl).toHaveAttribute("tabIndex", "0");
+});
+
 test("omits the percentile when the cohort is too small", () => {
   render(
     <CitationVelocityBadge
@@ -62,6 +69,35 @@ test("insufficient history shows the tracking-since date and no number", () => {
   expect(screen.queryByText(/citations in the last 30 days/i)).not.toBeInTheDocument();
 });
 
+test("the true empty-block shape (no cache row at all) renders with no tracking-since clause", () => {
+  // _empty_block() in citations/read.py emits status: insufficient_history with
+  // BOTH computed_at and first_observed_at null -- this is what every paper gets
+  // today, since collection started 2026-09-08 and nothing has two observations
+  // yet. The "tracking since" clause is correctly absent here: there is no date
+  // to show, and inventing one would be false. A future reader seeing no clause
+  // should not "fix" this by fabricating a first_observed_at.
+  render(
+    <CitationVelocityBadge
+      velocity={velocity({
+        status: "insufficient_history",
+        velocity_per_30d: null,
+        observation_count: 0,
+        first_observed_at: null,
+        percentile: null,
+        cohort_size: 0,
+        computed_at: null,
+      })}
+      isRetracted={false}
+    />,
+  );
+
+  expect(screen.getByText(/not enough history yet/i)).toBeInTheDocument();
+  expect(screen.queryByText(/tracking since/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/\d/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/for its age in this topic/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/as of \d+ days ago/i)).not.toBeInTheDocument();
+});
+
 test("undefined velocity renders an element rather than collapsing", () => {
   // The region's height is reserved from first paint; returning null would shift layout.
   const { container } = render(
@@ -90,6 +126,40 @@ test("a computation over 21 days old is suppressed entirely", () => {
   expect(screen.queryByText(/citations in the last 30 days/i)).not.toBeInTheDocument();
 });
 
+test("at exactly AGING_DAYS (3), the age label already appears", () => {
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+
+  render(
+    <CitationVelocityBadge velocity={velocity({ computed_at: threeDaysAgo })} isRetracted={false} />,
+  );
+
+  expect(screen.getByText(/as of 3 days ago/i)).toBeInTheDocument();
+  expect(screen.getByText(/citations in the last 30 days/i)).toBeInTheDocument();
+});
+
+test("at exactly 21 days old, the computation is still shown, not suppressed", () => {
+  // age > SUPPRESS_DAYS (21) is the suppress condition, so age === 21 must not suppress.
+  const twentyOneDaysAgo = new Date(Date.now() - 21 * 86400000).toISOString();
+
+  render(
+    <CitationVelocityBadge velocity={velocity({ computed_at: twentyOneDaysAgo })} isRetracted={false} />,
+  );
+
+  expect(screen.getByText(/as of 21 days ago/i)).toBeInTheDocument();
+  expect(screen.queryByText(/citation trend unavailable/i)).not.toBeInTheDocument();
+});
+
+test("at 22 days old, the computation is suppressed", () => {
+  const twentyTwoDaysAgo = new Date(Date.now() - 22 * 86400000).toISOString();
+
+  render(
+    <CitationVelocityBadge velocity={velocity({ computed_at: twentyTwoDaysAgo })} isRetracted={false} />,
+  );
+
+  expect(screen.getByText(/citation trend unavailable/i)).toBeInTheDocument();
+  expect(screen.queryByText(/citations in the last 30 days/i)).not.toBeInTheDocument();
+});
+
 test("a retracted paper qualifies the figure", () => {
   render(<CitationVelocityBadge velocity={velocity()} isRetracted={true} />);
 
@@ -101,5 +171,7 @@ test("never uses quality language", () => {
     <CitationVelocityBadge velocity={velocity()} isRetracted={false} />,
   );
 
-  expect(container.textContent).not.toMatch(/impact|influence|importance|momentum|trending/i);
+  expect(container.textContent).not.toMatch(
+    /impact|influence|importance|momentum|trending|highly cited|no citations|0 citations/i,
+  );
 });
