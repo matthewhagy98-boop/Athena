@@ -1,15 +1,18 @@
 import { Link } from "react-router-dom";
-import type { PaperRow } from "../api/types";
+import type { PaperRow, PaperVelocity } from "../api/types";
+import { CitationVelocityBadge } from "./CitationVelocityBadge";
 import { EvidenceIndicator } from "./EvidenceIndicator";
 
 export function ResearchCard({
   row,
   checked,
   onToggleSelect,
+  velocity,
 }: {
   row: PaperRow;
   checked: boolean;
   onToggleSelect: (paperId: string) => void;
+  velocity?: PaperVelocity;
 }) {
   return (
     <div className="mb-2 flex gap-3 rounded-lg border border-hairline bg-surface-container-lowest p-4">
@@ -41,6 +44,7 @@ export function ResearchCard({
             </Link>
           ))}
         </div>
+        <CitationVelocityBadge velocity={velocity} isRetracted={velocity?.is_retracted ?? false} />
       </div>
     </div>
   );

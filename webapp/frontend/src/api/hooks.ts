@@ -1,14 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiDelete, apiGet, apiPost } from "./client";
 import type {
+  CitationHistoryResponse,
   PaperCompareResponse,
   SavedSearch,
+  SavedSearchVelocityResponse,
   SearchParams,
   SearchResponse,
   TierDistribution,
   TimelineBucket,
   TopicCompareResponse,
   TopicRef,
+  VelocityResponse,
 } from "./types";
 
 export function useTopics() {
@@ -94,5 +97,45 @@ export function useTimeline(topicId: string) {
         window_start: new Date(Date.now() - NINETY_DAYS_MS).toISOString(),
         window_end: new Date().toISOString(),
       }),
+  });
+}
+
+// Velocity changes at most once a day, so refetching on every mount is wasted work.
+const VELOCITY_STALE_MS = 1_800_000;
+
+export function usePaperVelocities(paperIds: string[]) {
+  const sorted = [...paperIds].sort();
+  return useQuery({
+    queryKey: ["paper-velocities", sorted],
+    queryFn: () => apiGet<VelocityResponse>("/papers/velocity", { paper_ids: sorted }),
+    enabled: sorted.length > 0,
+    staleTime: VELOCITY_STALE_MS,
+  });
+}
+
+export function useCitationHistory(paperId: string | null, days = 365) {
+  return useQuery({
+    queryKey: ["citation-history", paperId, days],
+    queryFn: () =>
+      apiGet<CitationHistoryResponse>(`/papers/${paperId}/citation-history`, { days }),
+    enabled: paperId !== null,
+    staleTime: VELOCITY_STALE_MS,
+  });
+}
+
+export function useSavedSearchVelocity(
+  savedSearchId: string | null,
+  userId: string | null,
+  weeks = 12,
+) {
+  return useQuery({
+    queryKey: ["saved-search-velocity", savedSearchId, weeks],
+    queryFn: () =>
+      apiGet<SavedSearchVelocityResponse>(`/saved-searches/${savedSearchId}/velocity`, {
+        user_id: userId,
+        weeks,
+      }),
+    enabled: savedSearchId !== null && userId !== null,
+    staleTime: VELOCITY_STALE_MS,
   });
 }

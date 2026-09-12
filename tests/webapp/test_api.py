@@ -253,3 +253,96 @@ def test_list_saved_searches_includes_last_run_at(db_session):
     rows = client.get("/saved-searches", params={"user_id": str(user.id)}).json()
 
     assert rows[0]["last_run_at"] is None
+
+
+def test_paper_velocity_endpoint_returns_a_block_per_requested_id(db_session):
+    from decimal import Decimal
+
+    from citations.models import CitationVelocityCache
+
+    paper = Paper(title="Velocity endpoint paper")
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(
+        CitationVelocityCache(
+            paper_id=paper.id, status="ready", velocity_per_30d=Decimal("14.00"), percentile=88
+        )
+    )
+    db_session.flush()
+    missing = uuid.uuid4()
+
+    client = _client(db_session)
+    response = client.get("/papers/velocity", params={"paper_ids": [str(paper.id), str(missing)]})
+
+    assert response.status_code == 200
+    velocities = response.json()["velocities"]
+    assert velocities[str(paper.id)]["velocity_per_30d"] == 14.0
+    assert velocities[str(paper.id)]["percentile"] == 88
+    # Every requested id appears, even one that resolves to nothing.
+    assert velocities[str(missing)]["status"] == "insufficient_history"
+
+
+def test_paper_velocity_endpoint_rejects_empty_and_oversized_requests(db_session):
+    client = _client(db_session)
+
+    assert client.get("/papers/velocity", params={"paper_ids": []}).status_code == 422
+    too_many = {"paper_ids": [str(uuid.uuid4()) for _ in range(101)]}
+    assert client.get("/papers/velocity", params=too_many).status_code == 422
+
+
+def test_citation_history_endpoint_returns_observations(db_session):
+    from datetime import date as _date
+
+    from citations.models import CitationSnapshot
+
+    paper = Paper(title="History endpoint paper")
+    db_session.add(paper)
+    db_session.flush()
+    db_session.add(
+        CitationSnapshot(
+            paper_id=paper.id,
+            observed_at=datetime(2026, 7, 1, 4, 0),
+            observed_on=_date(2026, 7, 1),
+            citation_count=104,
+        )
+    )
+    db_session.flush()
+
+    client = _client(db_session)
+    response = client.get(f"/papers/{paper.id}/citation-history")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["observations"][0]["citation_count"] == 104
+    assert body["source"] == "semantic_scholar"
+
+
+def test_citation_history_endpoint_404s_for_unknown_paper(db_session):
+    client = _client(db_session)
+
+    response = client.get(f"/papers/{uuid.uuid4()}/citation-history")
+
+    assert response.status_code == 404
+
+
+def test_citation_history_endpoint_rejects_out_of_range_days(db_session):
+    paper = Paper(title="Range paper")
+    db_session.add(paper)
+    db_session.flush()
+    client = _client(db_session)
+
+    assert client.get(f"/papers/{paper.id}/citation-history", params={"days": 5}).status_code == 422
+    assert (
+        client.get(f"/papers/{paper.id}/citation-history", params={"days": 5000}).status_code == 422
+    )
+
+
+def test_saved_search_velocity_endpoint_404s_for_unknown_saved_search(db_session):
+    user = create_user(db_session, "ssvel@example.com")
+    client = _client(db_session)
+
+    response = client.get(
+        f"/saved-searches/{uuid.uuid4()}/velocity", params={"user_id": str(user.id)}
+    )
+
+    assert response.status_code == 404

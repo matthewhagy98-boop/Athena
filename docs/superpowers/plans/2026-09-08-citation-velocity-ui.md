@@ -1474,6 +1474,27 @@ Render the notice above the tier sections:
 
 and pass `velocities={velocityMap}` to each of the four `TierSection`s.
 
+- [ ] **Step 5b: Add a default `/papers/velocity` handler to the shared MSW server**
+
+**This step is required and was missing from the plan's first draft.** `src/test/setup.ts:30` starts MSW with `onUnhandledRequest: "error"`, and the pre-existing `src/pages/SearchPage.test.tsx` registers handlers only for `/search` and `/topics`. The moment `SearchPage` mounts `usePaperVelocities`, every one of those pre-existing tests fires an unhandled `/papers/velocity` request and fails — a break caused by this task, in tests it never touches.
+
+Fix it in the shared server rather than per-file, because the same trap waits for every future page that mounts velocity. In `src/test/server.ts`, register a default handler returning an empty map:
+
+```ts
+import { http, HttpResponse } from "msw";
+import { setupServer } from "msw/node";
+
+// Velocity is supplementary: its absence must never break a page, in production or
+// in tests. A default empty map means any page that mounts usePaperVelocities gets
+// a benign response without every test file having to know about it. Tests that
+// assert velocity behavior override this with server.use().
+export const server = setupServer(
+  http.get("/papers/velocity", () => HttpResponse.json({ velocities: {} })),
+);
+```
+
+Confirm afterwards that `src/pages/SearchPage.test.tsx` still passes **unmodified** — if it needed editing, the default handler is not doing its job. Note in your report whether the pre-existing tests passed untouched.
+
 - [ ] **Step 6: Run all tests and build**
 
 Run from `webapp/frontend`: `npx vitest run && npm run build`
@@ -1737,7 +1758,11 @@ export function SavedSearchVelocityTrend({
 
 - [ ] **Step 5: Mount both**
 
-In `src/pages/TopicDetailPage.tsx`, render `<CitationHistoryChart paperId={...} />` for the topic's most-cited paper, or omit it if no single paper is in focus — the topic page shows a table, so add the chart only if a paper row is expandable. If there is no natural single-paper focus, mount the chart on the Compare page's paper cards instead and note the deviation in the task report; do not invent a new route.
+**Decided 2026-09-10: mount the history chart on the Compare page's paper cards.** `TopicDetailPage` renders a flat table with no single-paper focus, and the spec's assumed expandable row does not exist; adding row expansion would be real scope for a secondary surface. Comparison is also where a citation trajectory is most decision-relevant — it is the screen where a user is actively weighing papers against each other.
+
+So: in `src/pages/ComparePage.tsx`, render `<CitationHistoryChart paperId={row.paper.id} />` inside each paper card in paper mode, below the existing abstract. Do **not** modify `TopicDetailPage.tsx`, and do not add a new route.
+
+Note the load implication: Compare holds up to 10 papers, so this mounts up to 10 independent `useCitationHistory` queries. That is acceptable — each is a single indexed read bounded by the `days` window, and unlike the saved-search endpoint it does not re-execute a search. Do not batch it; a per-card query keeps each card's loading and error states independent, which is what the silent-collapse requirement needs.
 
 In `src/pages/SavedSearchesPage.tsx`, render `<SavedSearchVelocityTrend savedSearchId={saved.id} userId={userId} />` inside each row, but only for the **first 10 rows** — the endpoint re-executes a search per call. Slice explicitly:
 
@@ -1778,4 +1803,4 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 
 **Type consistency.** `PaperVelocity` fields match between Task 4's TypeScript and Task 1's Python serialization field-for-field, including `computed_at` being nullable (Task 1 emits `None` for a paper with no cache row — Task 4's type says `string | null`, and Task 5's `daysSince` handles null). `VelocitySparkline`'s `points: number[]` matches its only caller. `saved_search_velocity(session, saved_search, weeks)` is called in Task 3 with exactly that signature.
 
-**One thing the implementer must resolve.** Task 7 Step 5 leaves the Topic Detail mount point genuinely open, because the current page renders a flat papers table with no single-paper focus and the spec assumes an expandable row. The task states the fallback (mount on Compare cards) and requires the deviation be reported. That is a real ambiguity in the design, not a gap in this plan — it should be settled with the user before Task 7 rather than guessed at.
+**Resolved 2026-09-10.** Task 7's mount point was genuinely ambiguous — the current Topic Detail page renders a flat papers table with no single-paper focus, while the spec assumes an expandable row. Settled with the user: the history chart mounts on the **Compare page's paper cards**, and `TopicDetailPage` is not modified. Task 7 Step 5 now carries that as a definite instruction rather than a branch, so no implementer has to guess.

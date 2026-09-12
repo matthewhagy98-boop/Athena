@@ -76,3 +76,39 @@ test("shows an error message when run fails", async () => {
   fireEvent.click(await screen.findByRole("button", { name: /run/i }));
   await waitFor(() => expect(screen.getByText(/couldn't run that search/i)).toBeInTheDocument());
 });
+
+test("requests the velocity trend for at most the first 10 rows", async () => {
+  const requestedIds: string[] = [];
+  const manySaved = Array.from({ length: 12 }, (_, i) => ({
+    id: `s${i + 1}`,
+    name: `Search ${i + 1}`,
+    query_params: { q: "x" },
+  }));
+  server.use(
+    http.get("/saved-searches", () => HttpResponse.json(manySaved)),
+    http.get("/saved-searches/:id/velocity", ({ params }) => {
+      requestedIds.push(params.id as string);
+      return HttpResponse.json({
+        status: "insufficient_coverage",
+        papers_total: 10,
+        papers_examined: 10,
+        papers_with_history: 1,
+        series: [],
+        computed_at: new Date().toISOString(),
+      });
+    }),
+  );
+
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText("Search 12")).toBeInTheDocument());
+  await waitFor(() => expect(requestedIds.length).toBeGreaterThanOrEqual(10));
+
+  const uniqueRequestedIds = new Set(requestedIds);
+  expect(uniqueRequestedIds.size).toBe(10);
+  for (let i = 1; i <= 10; i++) {
+    expect(uniqueRequestedIds.has(`s${i}`)).toBe(true);
+  }
+  expect(uniqueRequestedIds.has("s11")).toBe(false);
+  expect(uniqueRequestedIds.has("s12")).toBe(false);
+});

@@ -1,6 +1,7 @@
 import { createSearchParams, useNavigate } from "react-router-dom";
 import { useDeleteSavedSearch, useRunSavedSearch, useSavedSearches } from "../api/hooks";
 import type { SavedSearch, SearchParams } from "../api/types";
+import { SavedSearchVelocityTrend } from "../components/SavedSearchVelocityTrend";
 import { useIdentity } from "../identity/identity";
 
 function toUrlParams(params: SearchParams): Record<string, string> {
@@ -60,7 +61,7 @@ export function SavedSearchesPage() {
         </p>
       )}
 
-      {(data ?? []).map((saved) => (
+      {(data ?? []).map((saved, index) => (
         <div
           key={saved.id}
           className="mb-2 flex items-center justify-between rounded-lg border border-hairline bg-surface-container-lowest p-4"
@@ -76,6 +77,9 @@ export function SavedSearchesPage() {
             <p className="text-xs text-on-surface-variant">
               {saved.last_run_at ? `Last run ${saved.last_run_at.slice(0, 10)}` : "Never run"}
             </p>
+            {/* The endpoint re-executes a search per call, so only the first 10 rows
+                get a trend -- the client-side cap is the only bound on this read. */}
+            {index < 10 && <SavedSearchVelocityTrend savedSearchId={saved.id} userId={userId} />}
           </div>
           <div className="flex gap-2">
             <button
