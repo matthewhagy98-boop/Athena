@@ -47,9 +47,67 @@ def test_fingerprint_changes_when_member_score_changes():
 
 def test_fingerprint_stable_across_float_repr():
     # Rounded to 1 decimal before hashing, so float noise cannot invalidate a cache entry.
-    a = [MemberState(ID_A, None, 91.40000000000001, "established", False)]
+    #
+    # The noisy value must be produced by arithmetic, not written as a literal. The
+    # literal this test originally used -- 91.40000000000001 -- parses to the *same
+    # float64* as 91.4, so the two sides were identical before hashing and the test
+    # passed whether or not the rounding existed. `91.3 + 0.1` is a genuinely distinct
+    # double: it renders as "91.39999999999999", so without round(..., 1) the two
+    # fingerprints differ and this fails.
+    noisy = 91.3 + 0.1
+    assert noisy != 91.4, "the noise value must differ as a float, or this proves nothing"
+
+    a = [MemberState(ID_A, None, noisy, "established", False)]
     b = [MemberState(ID_A, None, 91.4, "established", False)]
     assert compute_inputs_fingerprint(a) == compute_inputs_fingerprint(b)
+
+
+def test_fingerprint_still_changes_on_a_real_one_decimal_difference():
+    # The complement of the test above, and the reason it is safe. Rounding is a
+    # deliberate loss of precision, so something must pin how much is lost -- otherwise
+    # rounding to 0 decimals would satisfy every other fingerprint test here.
+    #
+    # The pair must differ at 1 decimal AND collapse at 0. 91.4 vs 91.5 does not work:
+    # round(91.4, 0) is 91.0 and round(91.5, 0) is 92.0, so those still differ and the
+    # mutation survives. 91.4 vs 91.3 both round to 91.0, so this catches it.
+    a = [MemberState(ID_A, None, 91.4, "established", False)]
+    b = [MemberState(ID_A, None, 91.3, "established", False)]
+    assert compute_inputs_fingerprint(a) != compute_inputs_fingerprint(b)
+
+
+# Each field of MemberState is varied on its own below. Without per-field coverage a
+# refactor could drop a field from the hash format string and no test would notice --
+# which for scored_at would silently break the staleness guarantee the whole cache
+# rests on. test_unscored_member_contributes_none_placeholders varies three fields at
+# once, so it cannot stand in for these.
+
+
+def test_fingerprint_changes_when_only_scored_at_changes():
+    a = [MemberState(ID_A, datetime(2026, 7, 30, 4, 0), 91.4, "established", False)]
+    b = [MemberState(ID_A, datetime(2026, 8, 1, 4, 0), 91.4, "established", False)]
+    assert compute_inputs_fingerprint(a) != compute_inputs_fingerprint(b)
+
+
+def test_fingerprint_changes_when_only_evidence_tier_changes():
+    a = [MemberState(ID_A, None, 91.4, "established", False)]
+    b = [MemberState(ID_A, None, 91.4, "emerging", False)]
+    assert compute_inputs_fingerprint(a) != compute_inputs_fingerprint(b)
+
+
+def test_fingerprint_changes_when_only_member_id_changes():
+    # Order independence alone proves member_id is *neutral* under reordering, not that
+    # it is hashed at all. This pins that it is.
+    a = [MemberState(ID_A, None, 91.4, "established", False)]
+    b = [MemberState(ID_B, None, 91.4, "established", False)]
+    assert compute_inputs_fingerprint(a) != compute_inputs_fingerprint(b)
+
+
+def test_fingerprint_changes_when_a_member_is_added():
+    # Adding a paper to a comparison is a different comparison, and must not reuse the
+    # narrative written for the smaller set.
+    one = [MemberState(ID_A, None, 91.4, "established", False)]
+    two = one + [MemberState(ID_B, None, 12.0, "speculative", False)]
+    assert compute_inputs_fingerprint(one) != compute_inputs_fingerprint(two)
 
 
 def test_fingerprint_changes_when_member_becomes_retracted():

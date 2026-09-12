@@ -32,6 +32,8 @@ def compute_inputs_fingerprint(members: list[MemberState]) -> str:
         # Rounded to 1 decimal, matching the precision compute_base_score returns
         # (evidence_engine/scoring/formula.py:49), so float noise cannot invalidate.
         score = "none" if member.final_score is None else f"{round(member.final_score, 1)}"
-        tier = member.evidence_tier or "none"
+        # Explicit None check rather than `or "none"`, matching scored_at and
+        # final_score above: a falsy-but-present tier must not hash as "no tier".
+        tier = "none" if member.evidence_tier is None else member.evidence_tier
         lines.append(f"{member.member_id}|{scored_at}|{score}|{tier}|{member.is_retracted}")
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
