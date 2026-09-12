@@ -166,12 +166,63 @@ test("a retracted paper qualifies the figure", () => {
   expect(screen.getByText(/citations after retraction/i)).toBeInTheDocument();
 });
 
+const FORBIDDEN_COPY =
+  /impact|influence|importance|momentum|trending|highly cited|no citations|0 citations/i;
+
 test("never uses quality language", () => {
   const { container } = render(
     <CitationVelocityBadge velocity={velocity()} isRetracted={false} />,
   );
 
-  expect(container.textContent).not.toMatch(
-    /impact|influence|importance|momentum|trending|highly cited|no citations|0 citations/i,
-  );
+  expect(container.textContent).not.toMatch(FORBIDDEN_COPY);
+});
+
+// The single-fixture version of the test above passed while the component rendered
+// "0 citations in the last 30 days" for a zero-growth paper. The regex was right;
+// the input space was not. Driving every reachable state through the same assertion
+// is what actually enforces the constraint.
+describe("forbidden copy across the reachable state space", () => {
+  const states: [string, Parameters<typeof velocity>[0]][] = [
+    ["zero growth", { velocity_per_30d: 0 }],
+    ["fractional growth rounding to zero", { velocity_per_30d: 0.4 }],
+    ["typical growth", { velocity_per_30d: 14 }],
+    ["single citation", { velocity_per_30d: 1 }],
+    ["no cohort", { percentile: null, cohort_size: 4 }],
+    ["top of cohort", { percentile: 99 }],
+    ["bottom of cohort", { percentile: 1 }],
+    ["insufficient history", { status: "insufficient_history", velocity_per_30d: null }],
+    [
+      "empty block (every paper today)",
+      {
+        status: "insufficient_history",
+        velocity_per_30d: null,
+        first_observed_at: null,
+        computed_at: null,
+        percentile: null,
+      },
+    ],
+    ["aging", { computed_at: new Date(Date.now() - 10 * 86400000).toISOString() }],
+    ["suppressed", { computed_at: new Date(Date.now() - 30 * 86400000).toISOString() }],
+  ];
+
+  for (const [name, overrides] of states) {
+    for (const isRetracted of [false, true]) {
+      test(`${name}${isRetracted ? " (retracted)" : ""}`, () => {
+        const { container } = render(
+          <CitationVelocityBadge velocity={velocity(overrides)} isRetracted={isRetracted} />,
+        );
+
+        expect(container.textContent).not.toMatch(FORBIDDEN_COPY);
+      });
+    }
+  }
+});
+
+test("a zero-growth paper describes change rather than a count", () => {
+  // "0 citations in the last 30 days" would read as "this paper has zero
+  // citations" when it may have hundreds and simply gained none this window.
+  render(<CitationVelocityBadge velocity={velocity({ velocity_per_30d: 0 })} isRetracted={false} />);
+
+  expect(screen.getByText(/no change in the last 30 days/i)).toBeInTheDocument();
+  expect(screen.queryByText(/citations in the last 30 days/i)).not.toBeInTheDocument();
 });

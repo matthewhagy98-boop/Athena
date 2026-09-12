@@ -48,6 +48,21 @@ export function CitationVelocityBadge({
   }
 
   const figure = Math.round(velocity.velocity_per_30d);
+
+  // A tracked paper can legitimately gain nothing in the window. Rendering the
+  // figure would produce "0 citations in the last 30 days", which is both a
+  // forbidden phrase and actively misleading: it reads as "this paper has zero
+  // citations" when the paper may have hundreds and simply gained none. Velocity
+  // measures *change*, so at zero the honest statement is about change.
+  if (figure === 0) {
+    return (
+      <Region>
+        <span>No change in the last 30 days</span>
+        {age !== null && age >= AGING_DAYS && <span> · as of {age} days ago</span>}
+      </Region>
+    );
+  }
+
   const label = isRetracted ? "citations after retraction" : "citations in the last 30 days";
 
   return (
