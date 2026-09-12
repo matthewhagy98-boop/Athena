@@ -1376,6 +1376,34 @@ Generation is explicitly user-triggered rather than automatic on page load, so a
 
 Every `material-symbols-outlined` span must carry `aria-hidden="true"`, and colors come from design tokens only.
 
+### Decision 2026-09-12: citation indices resolve through `subject_ids`, not by position
+
+Pre-flight review of this plan found that citation indices and displayed card positions
+are two different orderings, and the panel as drafted conflated them:
+
+- `_load_papers` (Task 5) sorts members by `str(uuid)` before building the prompt, so a
+  citation index is a position in **UUID-sorted** order. That sort is deliberate — it is
+  what makes the cache key order-independent, so one stored row serves every selection
+  order (`test_member_order_does_not_produce_a_second_row`).
+- `compare_papers` (`webapp/compare.py:36-42`) iterates `paper_ids` as given, so the
+  Compare grid renders cards in **selection** order.
+
+The two coincide only by accident, so the drafted caption "Bracketed numbers refer to
+their position above" would have pointed readers at the wrong study most of the time —
+violating this plan's own constraint that citations be resolvable member indices.
+
+Generating in display order was rejected: the cache key ignores order by design, so a
+second user with a different selection order would get a cache hit whose indices encode
+the first user's ordering. That moves the bug rather than fixing it.
+
+**Resolution.** Keep the canonical sorted order for generation and storage. `_synthesis_out`
+already returns `subject_ids` in that same sorted order, so the panel has what it needs:
+map citation index → `result.subject_ids[index]` → the card holding that paper id, and
+render **that card's** displayed position. Step 5's `claim.citations.map((c) => c + 1)`
+must be replaced accordingly, and Step 3 gains a test that a shuffled `paperIds` prop
+still cites the correct studies — that test is the point of this decision, so it must
+fail against positional rendering.
+
 - [ ] **Step 1: Add the type**
 
 In `src/api/types.ts`:
