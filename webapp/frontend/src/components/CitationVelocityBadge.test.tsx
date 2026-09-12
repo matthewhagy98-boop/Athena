@@ -14,6 +14,7 @@ function velocity(overrides: Partial<PaperVelocity> = {}): PaperVelocity {
     cohort_size: 34,
     is_retracted: false,
     computed_at: new Date().toISOString(),
+    recent_counts: [100, 104, 109, 112, 121, 126],
     ...overrides,
   };
 }
@@ -225,4 +226,34 @@ test("a zero-growth paper describes change rather than a count", () => {
 
   expect(screen.getByText(/no change in the last 30 days/i)).toBeInTheDocument();
   expect(screen.queryByText(/citations in the last 30 days/i)).not.toBeInTheDocument();
+});
+
+test("renders a sparkline beside the figure when enough points exist", () => {
+  const { container } = render(
+    <CitationVelocityBadge velocity={velocity()} isRetracted={false} />,
+  );
+
+  // Decorative, so it is found by attribute rather than by accessible name.
+  expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+});
+
+test("omits the sparkline below three points without disturbing the figure", () => {
+  const { container } = render(
+    <CitationVelocityBadge velocity={velocity({ recent_counts: [100, 104] })} isRetracted={false} />,
+  );
+
+  expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+  expect(screen.getByText(/citations in the last 30 days/i)).toBeInTheDocument();
+});
+
+test("a payload missing recent_counts renders rather than blanking the card", () => {
+  // Velocity is supplementary: its absence must never degrade the page. Without a
+  // guard this threw on points.length and took the whole results list with it.
+  const partial = velocity();
+  delete (partial as Partial<typeof partial>).recent_counts;
+
+  expect(() =>
+    render(<CitationVelocityBadge velocity={partial} isRetracted={false} />),
+  ).not.toThrow();
+  expect(screen.getByText(/citations in the last 30 days/i)).toBeInTheDocument();
 });

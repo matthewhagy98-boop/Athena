@@ -2,10 +2,15 @@ import { Line, LineChart, ResponsiveContainer } from "recharts";
 
 const TEAL = "#006a61";
 
-export function VelocitySparkline({ points }: { points: number[] }) {
+export function VelocitySparkline({ points }: { points?: number[] }) {
   // Below three points a "line" is a single straight segment, which implies a trend
   // from one interval. Better to draw nothing than to imply a shape that isn't there.
-  if (points.length < 3) return null;
+  //
+  // The `points` guard is load-bearing rather than decorative: this renders inside
+  // CitationVelocityBadge on every search result, and velocity is supplementary --
+  // its absence must never degrade the page. A payload missing the field would
+  // otherwise throw here and blank the whole results list.
+  if (!points || points.length < 3) return null;
 
   const data = points.map((value, index) => ({ index, value }));
   return (

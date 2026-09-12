@@ -7,6 +7,11 @@ from sqlalchemy.orm import Session
 from citations.models import CitationSnapshot, CitationVelocityCache
 from evidence_engine.db.models import Paper
 
+# Trailing observations sent per paper for the badge sparkline. At the job's daily
+# cadence this is a few weeks of trend -- enough shape to read, small enough that a
+# 50-row search page stays a modest payload.
+RECENT_COUNTS_LIMIT = 12
+
 
 def iso_utc(value) -> str | None:
     """Serialize a UTC timestamp with an explicit Z suffix.
@@ -38,7 +43,30 @@ def _empty_block(is_retracted: bool) -> dict:
         "cohort_size": 0,
         "is_retracted": is_retracted,
         "computed_at": None,
+        "recent_counts": [],
     }
+
+
+def _recent_counts_by_paper(session: Session, paper_ids: list[uuid.UUID]) -> dict:
+    """Trailing citation counts per paper, oldest first, for the badge sparkline.
+
+    One batched query, not one per paper: the search page asks for up to 50 papers
+    at a time, and a per-paper query would turn this endpoint's single round trip
+    into 50 -- which is the reason it is batched at all.
+
+    Capped per paper, keeping the NEWEST points. Dropping the newest instead would
+    render a stale window as though it were the current trend.
+    """
+    rows = session.execute(
+        select(CitationSnapshot.paper_id, CitationSnapshot.citation_count)
+        .where(CitationSnapshot.paper_id.in_(paper_ids))
+        .order_by(CitationSnapshot.paper_id, CitationSnapshot.observed_at)
+    ).all()
+
+    series: dict = {}
+    for paper_id, count in rows:
+        series.setdefault(paper_id, []).append(count)
+    return {pid: counts[-RECENT_COUNTS_LIMIT:] for pid, counts in series.items()}
 
 
 def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
@@ -51,6 +79,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
         row.id: bool(row.is_retracted)
         for row in session.execute(select(Paper).where(Paper.id.in_(paper_ids))).scalars().all()
     }
+    recent_counts = _recent_counts_by_paper(session, paper_ids)
     caches = {
         row.paper_id: row
         for row in session.execute(
@@ -81,6 +110,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
             "cohort_size": cache.cohort_size,
             "is_retracted": is_retracted,
             "computed_at": iso_utc(cache.computed_at),
+            "recent_counts": recent_counts.get(paper_id, []),
         }
     return out
 

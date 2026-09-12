@@ -1,4 +1,5 @@
 import type { PaperVelocity } from "../api/types";
+import { VelocitySparkline } from "./VelocitySparkline";
 
 const AGING_DAYS = 3;
 const SUPPRESS_DAYS = 21;
@@ -70,7 +71,10 @@ export function CitationVelocityBadge({
       <span className={isRetracted ? "font-semibold text-error" : "font-semibold text-secondary"}>
         {figure}
       </span>{" "}
-      <span>{label}</span>
+      <span>{label}</span>{" "}
+      {/* Decorative: aria-hidden, and it self-suppresses below 3 points rather than
+          drawing a straight segment that would imply a trend from one interval. */}
+      <VelocitySparkline points={velocity.recent_counts} />
       {velocity.percentile !== null && (
         <>
           {" · "}

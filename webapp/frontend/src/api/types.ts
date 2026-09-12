@@ -76,6 +76,9 @@ export interface PaperVelocity {
   cohort_size: number;
   is_retracted: boolean;
   computed_at: string | null;
+  /** Trailing citation counts, oldest first, for the badge sparkline. Batched into
+   *  this response so a 50-row search page stays one request. */
+  recent_counts: number[];
 }
 
 export interface VelocityResponse {
