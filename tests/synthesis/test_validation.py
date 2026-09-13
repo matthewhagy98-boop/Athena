@@ -211,3 +211,32 @@ def test_a_passing_response_carries_every_survivor_field_through():
     assert result.claims == [{"text": "Consistent.", "citations": [0, 1]}]
     assert result.disagreements == [{"indices": [0, 1], "description": "Sample sizes differ."}]
     assert result.strength_ranking == [1, 0]
+
+
+def test_a_non_list_citations_value_is_treated_as_no_citations():
+    # _valid_indices' list guard had no test: deleting it passed the whole file, because
+    # every input in the suite already supplied a list. A model returning a bare integer
+    # for a list-typed field would raise TypeError on iteration instead of being treated
+    # as ungrounded.
+    raw = _raw(claims=[{"text": "Grounded?", "citations": 5}])
+
+    result = validate_response(raw, member_count=2)
+
+    assert result.ok is False
+    assert result.failure_reason == "citation_density"
+
+
+def test_a_disagreement_naming_more_than_two_members_is_dropped():
+    # The index-count guard was only ever tested on the "too few" side, so changing
+    # `!= 2` to `< 2` passed every test -- silently admitting a three-member entry into
+    # a field whose whole contract is that a disagreement names exactly two studies.
+    raw = _raw(
+        disagreements=[
+            {"indices": [0, 1, 2], "description": "three members"},
+            {"indices": [0, 1], "description": "kept"},
+        ]
+    )
+
+    result = validate_response(raw, member_count=3)
+
+    assert [d["description"] for d in result.disagreements] == ["kept"]
