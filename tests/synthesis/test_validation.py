@@ -110,3 +110,24 @@ def test_disagreement_with_bad_indices_is_dropped():
 
     assert len(result.disagreements) == 1
     assert result.disagreements[0]["description"] == "ok"
+
+
+def test_duplicate_strength_ranking_indices_are_collapsed():
+    # validate_response de-duplicates the ranking, but nothing exercised it: deleting the
+    # dedup was the one mutation the original test list did not catch. A ranking is an
+    # ordering of members, so a repeated index is malformed and must not appear twice.
+    result = validate_response(_raw(strength_ranking=[1, 0, 1, 0]), member_count=2)
+
+    assert result.strength_ranking == [1, 0]
+
+
+def test_boolean_citations_do_not_count_as_grounding():
+    # bool is a subclass of int, so a JSON `true` would slip through an isinstance(v, int)
+    # check as index 1. The claim would then count as cited, and the whole point of the
+    # density floor is that an ungrounded claim must not.
+    raw = _raw(claims=[{"text": "Ungrounded.", "citations": [True]}])
+
+    result = validate_response(raw, member_count=2)
+
+    assert result.ok is False
+    assert result.failure_reason == "citation_density"

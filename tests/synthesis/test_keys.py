@@ -18,6 +18,22 @@ def test_cache_key_is_order_independent():
     assert a == b
 
 
+def test_cache_key_changes_with_a_different_id_set():
+    # Order independence alone proves the ids are *neutral under reordering*, not that
+    # their values reach the hash. Without this, an implementation that hashed only
+    # len(subject_ids) -- or a constant placeholder -- would pass every other cache-key
+    # test here, and two unrelated comparisons would collide on one cached narrative.
+    a = compute_cache_key("paper", [ID_A], "v1", "m1")
+    b = compute_cache_key("paper", [ID_B], "v1", "m1")
+    assert a != b
+
+
+def test_cache_key_changes_when_a_member_is_added():
+    one = compute_cache_key("paper", [ID_A], "v1", "m1")
+    two = compute_cache_key("paper", [ID_A, ID_B], "v1", "m1")
+    assert one != two
+
+
 def test_cache_key_changes_with_prompt_version():
     a = compute_cache_key("paper", [ID_A], "v1", "m1")
     b = compute_cache_key("paper", [ID_A], "v2", "m1")
@@ -92,6 +108,16 @@ def test_fingerprint_changes_when_only_evidence_tier_changes():
     a = [MemberState(ID_A, None, 91.4, "established", False)]
     b = [MemberState(ID_A, None, 91.4, "emerging", False)]
     assert compute_inputs_fingerprint(a) != compute_inputs_fingerprint(b)
+
+
+def test_fingerprint_distinguishes_an_empty_tier_from_no_tier():
+    # keys.py uses an explicit `is None` check rather than `or "none"`. Comparing two
+    # truthy tiers cannot tell those apart -- this is the case that can: with `or`, an
+    # empty tier would hash identically to a missing one, so a paper losing its tier
+    # would not supersede its cached narrative.
+    empty = [MemberState(ID_A, None, 91.4, "", False)]
+    missing = [MemberState(ID_A, None, 91.4, None, False)]
+    assert compute_inputs_fingerprint(empty) != compute_inputs_fingerprint(missing)
 
 
 def test_fingerprint_changes_when_only_member_id_changes():

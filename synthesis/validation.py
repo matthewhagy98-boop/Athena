@@ -18,7 +18,15 @@ class ValidationResult:
 def _valid_indices(values, member_count: int) -> list[int]:
     if not isinstance(values, list):
         return []
-    return [v for v in values if isinstance(v, int) and 0 <= v < member_count]
+    # bool is a subclass of int, so a JSON `true` would otherwise pass as index 1. That
+    # is not a pedantic case here: a claim citing [true] would count as cited, inflating
+    # citation density and admitting exactly the ungrounded narrative this module exists
+    # to reject -- then rendering as a citation to a study the claim never referenced.
+    return [
+        v
+        for v in values
+        if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < member_count
+    ]
 
 
 def validate_response(raw: dict | None, member_count: int) -> ValidationResult:
