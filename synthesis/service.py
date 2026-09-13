@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from evidence_engine.config import get_settings
@@ -141,12 +142,39 @@ def get_or_create_synthesis(
         prompt_version=SYNTHESIS_PROMPT_VERSION,
         generated_at=now,
     )
-    session.add(row)
-    session.flush()
+    # Two requests for the same uncached member set both miss the lookup above, both
+    # generate, and both arrive here with the same cache_key. The partial unique index
+    # lets one win; without this the loser raises IntegrityError and the caller sees a
+    # 500 for what is a cache hit in everything but timing. The savepoint keeps the
+    # rollback scoped to this insert, so the winner's row and our telemetry survive.
+    #
+    # This fixes the crash, not the duplicate spend: both requests had already paid for a
+    # model call before either inserted. Preventing that needs serialisation across the
+    # generate call, which was considered and rejected as too costly for the window.
+    persisted = row
+    try:
+        with session.begin_nested():
+            session.add(row)
+    except IntegrityError:
+        # No expunge needed: rolling back the savepoint already evicts the pending row.
+        # Calling it here raises InvalidRequestError instead of recovering.
+        winner = session.execute(
+            select(ComparisonSynthesis).where(
+                ComparisonSynthesis.cache_key == cache_key,
+                ComparisonSynthesis.superseded_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if winner is None:
+            # The conflict was not the race we know how to recover from.
+            raise
+        persisted = winner
 
+    # Telemetry is written even when we lost the race: the model call happened and its
+    # cost is real, so it must still be counted. It points at the winning row, whose
+    # content this attempt duplicated.
     session.add(
         SynthesisGeneration(
-            synthesis_id=row.id,
+            synthesis_id=persisted.id,
             user_id=user_id,
             member_count=len(inputs),
             outcome=row.status,
@@ -154,4 +182,4 @@ def get_or_create_synthesis(
         )
     )
     session.flush()
-    return row
+    return persisted

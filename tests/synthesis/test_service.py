@@ -6,6 +6,8 @@ from sqlalchemy import select
 from evidence_engine.db.models import EvidenceTier, Paper, Score, StudyType
 from synthesis.models import ComparisonSynthesis, SynthesisGeneration
 from synthesis.service import COOLDOWN_MINUTES, get_or_create_synthesis
+from evidence_engine.config import get_settings
+from synthesis.keys import SYNTHESIS_PROMPT_VERSION, compute_cache_key
 from synthesis.validation import ValidationResult
 
 
@@ -290,3 +292,58 @@ def test_a_non_paper_subject_type_is_rejected_clearly(db_session):
 
     with pytest.raises(ValueError, match="Unsupported subject_type"):
         get_or_create_synthesis(db_session, "topic", [p1.id], generate=_ok())
+
+
+def test_losing_the_insert_race_returns_the_winners_row(db_session):
+    # Two requests for the same uncached member set both miss the cache lookup, both
+    # call the model, and both try to insert under the same cache_key. The partial
+    # unique index lets one win; the loser must return the winner's narrative rather
+    # than raising IntegrityError up to the endpoint as a 500.
+    #
+    # generate() runs between the lookup and the insert, so inserting the competitor
+    # from inside the fake reproduces the race exactly, without threads.
+    p1 = _paper(db_session, "Contended")
+
+    def generate_then_lose_the_race(members, call=None):
+        key = compute_cache_key(
+            "paper", [p1.id], SYNTHESIS_PROMPT_VERSION, get_settings().anthropic_model
+        )
+        db_session.add(
+            ComparisonSynthesis(
+                cache_key=key,
+                subject_type="paper",
+                subject_ids=[p1.id],
+                inputs_fingerprint="winner",
+                status="ready",
+                narrative="The winner's narrative.",
+                claims=[{"text": "Winner.", "citations": [0]}],
+                model_id=get_settings().anthropic_model,
+                prompt_version=SYNTHESIS_PROMPT_VERSION,
+            )
+        )
+        db_session.flush()
+        return (
+            ValidationResult(
+                ok=True, narrative="The loser's narrative.", claims=[{"text": "Loser.", "citations": [0]}]
+            ),
+            10,
+        )
+
+    row = get_or_create_synthesis(db_session, "paper", [p1.id], generate=generate_then_lose_the_race)
+
+    assert row.narrative == "The winner's narrative."
+
+    # Exactly one active row survives -- the loser's insert was rolled back, not merged.
+    active = (
+        db_session.execute(
+            select(ComparisonSynthesis).where(ComparisonSynthesis.superseded_at.is_(None))
+        )
+        .scalars()
+        .all()
+    )
+    assert len(active) == 1
+
+    # The model call happened and cost real money, so it is still counted, pointed at
+    # the row that actually survived.
+    gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
+    assert gen.synthesis_id == row.id
