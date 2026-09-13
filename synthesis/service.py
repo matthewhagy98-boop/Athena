@@ -24,6 +24,11 @@ def _synthesis_enabled() -> bool:
 
 
 def _load_papers(session: Session, subject_ids: list[uuid.UUID]) -> list[Paper]:
+    # Sorted by str(uuid) to make the member ordering canonical. This is NOT redundant
+    # with compute_cache_key's own sort -- it is load-bearing *because* the key ignores
+    # order. A differently-ordered request for the same papers is a cache hit, so
+    # whichever order generated the row is frozen into the narrative, and claim citations
+    # are positions in subject_ids (plan decision, 2026-09-12).
     ordered_ids = sorted(subject_ids, key=str)
     papers = []
     for member_id in ordered_ids:
@@ -57,6 +62,14 @@ def get_or_create_synthesis(
     """Return a cached synthesis, or generate one. None when the feature is disabled."""
     if not _synthesis_enabled():
         return None
+
+    # subject_type is threaded through the cache key and stored on the row because topic
+    # syntheses are modelled, but only the paper endpoint ships. Without this guard
+    # _load_papers would look a topic id up in the papers table and report
+    # "Paper <id> not found" -- a paper-flavoured error for something never claimed to be
+    # a paper, which Task 6 would then surface as a 404.
+    if subject_type != "paper":
+        raise ValueError(f"Unsupported subject_type {subject_type!r}: only 'paper' is implemented")
 
     now = now or datetime.utcnow()
     generate = generate or default_generate

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from evidence_engine.db.models import EvidenceTier, Paper, Score, StudyType
 from synthesis.models import ComparisonSynthesis, SynthesisGeneration
-from synthesis.service import get_or_create_synthesis
+from synthesis.service import COOLDOWN_MINUTES, get_or_create_synthesis
 from synthesis.validation import ValidationResult
 
 
@@ -208,3 +208,85 @@ def test_member_ordering_is_canonical_regardless_of_request_order(db_session):
     row = get_or_create_synthesis(db_session, "paper", list(reversed(ids)), generate=_ok())
 
     assert row.subject_ids == ids
+
+
+def test_a_failed_result_persists_no_narrative_or_claims(db_session):
+    # The binding constraint is that nothing is persisted with a narrative unless the
+    # result validated. The guards in get_or_create_synthesis were untested, because
+    # ValidationResult's dataclass defaults happen to equal the values they fall back to
+    # -- so every failure fixture matched the guard's output and removing the guards
+    # passed the whole file. This fixture returns a NOT-ok result that still carries a
+    # narrative and claims, which is the only shape that distinguishes them.
+    p1 = _paper(db_session, "Leaky")
+
+    def failed_but_populated(members, call=None):
+        return (
+            ValidationResult(
+                ok=False,
+                failure_reason="citation_density",
+                narrative="Ungrounded prose that must never be stored.",
+                claims=[{"text": "Uncited.", "citations": []}],
+                disagreements=[{"indices": [0, 1], "description": "d"}],
+                strength_ranking=[0],
+            ),
+            10,
+        )
+
+    row = get_or_create_synthesis(db_session, "paper", [p1.id], generate=failed_but_populated)
+
+    assert row.status == "failed"
+    assert row.narrative is None
+    assert row.claims == []
+    assert row.disagreements == []
+    assert row.strength_ranking == []
+
+
+def test_a_ready_row_carries_no_failure_reason_or_cooldown(db_session):
+    # The complement: the same guards must not leave failure metadata on a good row, or
+    # a later request would treat a ready synthesis as cooling down.
+    p1 = _paper(db_session, "Clean")
+
+    row = get_or_create_synthesis(db_session, "paper", [p1.id], generate=_ok())
+
+    assert row.status == "ready"
+    assert row.failure_reason is None
+    assert row.cooldown_until is None
+
+
+def test_the_supplied_now_is_what_gets_written(db_session):
+    # `now` is injectable so the cooldown tests can control time, but nothing asserted it
+    # actually reaches the persisted columns -- substituting datetime.utcnow() for it
+    # passed every test.
+    p1 = _paper(db_session, "Clock")
+    fixed = datetime(2026, 8, 2, 9, 0)
+
+    row = get_or_create_synthesis(db_session, "paper", [p1.id], generate=_ok(), now=fixed)
+
+    assert row.generated_at == fixed
+
+
+def test_cooldown_is_still_honoured_at_the_exact_expiry_instant(db_session):
+    # The check is `cooldown_until > now`, so at exactly cooldown_until it must expire
+    # and regenerate. Every other cooldown test uses a two-hour gap against a sixty
+    # minute cooldown, so > vs >= was never pinned.
+    p1 = _paper(db_session, "Boundary")
+    start = datetime(2026, 8, 2, 9, 0)
+    calls = []
+
+    def failing(members, call=None):
+        calls.append(1)
+        return (ValidationResult(ok=False, failure_reason="llm_unavailable"), 50)
+
+    get_or_create_synthesis(db_session, "paper", [p1.id], generate=failing, now=start)
+    expiry = start + timedelta(minutes=COOLDOWN_MINUTES)
+
+    get_or_create_synthesis(db_session, "paper", [p1.id], generate=failing, now=expiry)
+
+    assert len(calls) == 2
+
+
+def test_a_non_paper_subject_type_is_rejected_clearly(db_session):
+    p1 = _paper(db_session, "Topicish")
+
+    with pytest.raises(ValueError, match="Unsupported subject_type"):
+        get_or_create_synthesis(db_session, "topic", [p1.id], generate=_ok())
