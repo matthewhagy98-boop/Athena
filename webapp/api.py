@@ -13,6 +13,7 @@ from digest.profiles import create_anonymous_user
 from evidence_engine.db.models import EvidenceTier, Paper, PaperTopic, StudyType, Topic
 from evidence_engine.db.session import SessionLocal
 
+from synthesis.service import get_or_create_synthesis
 from webapp.compare import compare_papers, compare_topics
 from webapp.saved_searches import (
     _get_owned_saved_search,
@@ -252,6 +253,49 @@ def saved_search_velocity_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return saved_search_velocity(db, saved, weeks=weeks)
+
+
+MAX_SYNTHESIS_MEMBERS = 10
+
+
+def _synthesis_out(row) -> dict:
+    return {
+        "id": str(row.id),
+        "status": row.status,
+        "narrative": row.narrative,
+        "claims": row.claims,
+        "disagreements": row.disagreements,
+        "strength_ranking": row.strength_ranking,
+        "retracted_member_indices": row.retracted_member_indices,
+        "failure_reason": row.failure_reason,
+        "subject_ids": [str(i) for i in row.subject_ids],
+    }
+
+
+@app.post("/synthesis/papers")
+def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> dict:
+    raw_ids = payload.get("paper_ids") or []
+    if not raw_ids or len(raw_ids) > MAX_SYNTHESIS_MEMBERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"paper_ids must contain between 1 and {MAX_SYNTHESIS_MEMBERS} ids",
+        )
+    try:
+        paper_ids = [uuid.UUID(str(i)) for i in raw_ids]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="paper_ids must be UUIDs") from exc
+
+    user_id = payload.get("user_id")
+    try:
+        row = get_or_create_synthesis(
+            db, "paper", paper_ids, user_id=uuid.UUID(user_id) if user_id else None
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if row is None:
+        raise HTTPException(status_code=503, detail="Synthesis is not enabled")
+    return _synthesis_out(row)
 
 
 from pathlib import Path

@@ -346,3 +346,67 @@ def test_saved_search_velocity_endpoint_404s_for_unknown_saved_search(db_session
     )
 
     assert response.status_code == 404
+
+
+def test_synthesis_endpoint_returns_narrative(db_session, monkeypatch):
+    from synthesis.models import ComparisonSynthesis
+
+    paper = Paper(title="Synthesis paper")
+    db_session.add(paper)
+    db_session.flush()
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        return ComparisonSynthesis(
+            cache_key="k" * 64,
+            subject_type=subject_type,
+            subject_ids=subject_ids,
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[{"text": "Claim.", "citations": [0]}],
+            disagreements=[],
+            strength_ranking=[0],
+            retracted_member_indices=[],
+            model_id="m",
+            prompt_version="v1",
+        )
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(paper.id)]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["narrative"] == "A grounded summary."
+    assert body["claims"][0]["citations"] == [0]
+
+
+def test_synthesis_endpoint_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", lambda *a, **k: None)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 503
+
+
+def test_synthesis_endpoint_returns_404_for_unknown_paper(db_session, monkeypatch):
+    def raising(*args, **kwargs):
+        raise ValueError("Paper deadbeef not found")
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", raising)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 404
+
+
+def test_synthesis_endpoint_rejects_empty_and_oversized_selections(db_session):
+    client = _client(db_session)
+
+    assert client.post("/synthesis/papers", json={"paper_ids": []}).status_code == 422
+    too_many = {"paper_ids": [str(uuid.uuid4()) for _ in range(11)]}
+    assert client.post("/synthesis/papers", json=too_many).status_code == 422
