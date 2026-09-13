@@ -117,3 +117,32 @@ def test_generate_measures_elapsed_time_rather_than_reporting_a_constant():
     _, latency_ms = generate_synthesis(MEMBERS, call=slow)
 
     assert latency_ms >= 50
+
+
+def test_generate_passes_the_tool_schema_and_token_cap_to_the_call():
+    # Every other fake here accepts (prompt, tool, max_tokens) and ignores the last two,
+    # so nothing pinned what was actually sent: swapping the arguments to
+    # call(prompt, MAX_TOKENS, SYNTHESIS_TOOL) passed the whole file. Forced-tool use is
+    # what makes the response structured at all -- send the wrong object and the model
+    # is unconstrained, which is precisely what validation.py exists to compensate for.
+    from synthesis.generate import MAX_TOKENS
+    from synthesis.prompt import SYNTHESIS_TOOL
+
+    seen = {}
+
+    def recording(prompt, tool, max_tokens):
+        seen["prompt"] = prompt
+        seen["tool"] = tool
+        seen["max_tokens"] = max_tokens
+        return {
+            "narrative": "They agree.",
+            "claims": [{"text": "Consistent.", "citations": [0]}],
+            "disagreements": [],
+            "strength_ranking": [],
+        }
+
+    generate_synthesis(MEMBERS, call=recording)
+
+    assert seen["tool"] is SYNTHESIS_TOOL
+    assert seen["max_tokens"] == MAX_TOKENS
+    assert "First study" in seen["prompt"]
