@@ -410,3 +410,47 @@ def test_synthesis_endpoint_rejects_empty_and_oversized_selections(db_session):
     assert client.post("/synthesis/papers", json={"paper_ids": []}).status_code == 422
     too_many = {"paper_ids": [str(uuid.uuid4()) for _ in range(11)]}
     assert client.post("/synthesis/papers", json=too_many).status_code == 422
+
+
+def test_the_synthesis_member_cap_boundary_is_exact(db_session, monkeypatch):
+    # The brief's selection test only checks 0 and 11, both of which reject, so a mutant
+    # moving the cutoff to 5 or 20 would pass it. MAX_SYNTHESIS_MEMBERS bounds the prompt
+    # size, the model cost per request, and the per-member session.get loop inside the
+    # service -- it is the reason that loop is acceptable -- so the exact boundary is the
+    # behaviour worth pinning, not "some large number is refused".
+    from synthesis.models import ComparisonSynthesis
+    from webapp.api import MAX_SYNTHESIS_MEMBERS
+
+    reached = []
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        reached.append(len(subject_ids))
+        return ComparisonSynthesis(
+            cache_key="k" * 64,
+            subject_type=subject_type,
+            subject_ids=subject_ids,
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[{"text": "Claim.", "citations": [0]}],
+            disagreements=[],
+            strength_ranking=[0],
+            retracted_member_indices=[],
+            model_id="m",
+            prompt_version="v1",
+        )
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    def post(n):
+        return client.post(
+            "/synthesis/papers", json={"paper_ids": [str(uuid.uuid4()) for _ in range(n)]}
+        )
+
+    assert post(MAX_SYNTHESIS_MEMBERS).status_code == 200
+    assert post(MAX_SYNTHESIS_MEMBERS + 1).status_code == 422
+
+    # The oversized request must be refused by validation, never by the service -- the
+    # cap exists to stop the work from starting, not to discard its result.
+    assert reached == [MAX_SYNTHESIS_MEMBERS]
