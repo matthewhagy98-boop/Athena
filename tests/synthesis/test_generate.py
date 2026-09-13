@@ -82,3 +82,38 @@ def test_generate_passes_member_count_to_validator():
     result, _ = generate_synthesis(MEMBERS, call=fake_call)
 
     assert result.claims[0]["citations"] == [0]
+
+
+def test_generate_does_not_propagate_an_exception_from_the_model_call():
+    # The load-bearing property of this function: it sits in a request path, so a
+    # transport failure beneath call_forced_tool must become a failed ValidationResult,
+    # not an exception. The None-returning test above does not reach this path --
+    # removing the try/except leaves it passing.
+    def exploding(prompt, tool, max_tokens):
+        raise ConnectionError("socket closed")
+
+    result, latency_ms = generate_synthesis(MEMBERS, call=exploding)
+
+    assert result.ok is False
+    assert result.failure_reason == "llm_unavailable"
+    assert result.narrative is None
+    assert latency_ms >= 0
+
+
+def test_generate_measures_elapsed_time_rather_than_reporting_a_constant():
+    # `latency_ms >= 0` is satisfied by `return 0`, and Task 5 persists this value as
+    # cost telemetry. Pin that it actually tracks the call's duration.
+    import time
+
+    def slow(prompt, tool, max_tokens):
+        time.sleep(0.05)
+        return {
+            "narrative": "They agree.",
+            "claims": [{"text": "Consistent.", "citations": [0]}],
+            "disagreements": [],
+            "strength_ranking": [],
+        }
+
+    _, latency_ms = generate_synthesis(MEMBERS, call=slow)
+
+    assert latency_ms >= 50
