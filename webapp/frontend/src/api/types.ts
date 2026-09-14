@@ -108,3 +108,20 @@ export interface SavedSearchVelocityResponse {
   series: SavedSearchVelocityPoint[];
   computed_at: string;
 }
+
+export interface SynthesisClaim {
+  text: string;
+  citations: number[];
+}
+
+export interface SynthesisResult {
+  id: string;
+  status: "ready" | "failed";
+  narrative: string | null;
+  claims: SynthesisClaim[];
+  disagreements: { indices: number[]; description: string }[];
+  strength_ranking: number[];
+  retracted_member_indices: number[];
+  failure_reason: string | null;
+  subject_ids: string[];
+}
