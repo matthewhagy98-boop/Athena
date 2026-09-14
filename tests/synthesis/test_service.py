@@ -1,11 +1,16 @@
 from datetime import datetime, timedelta
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
 from evidence_engine.db.models import EvidenceTier, Paper, Score, StudyType
 from synthesis.models import ComparisonSynthesis, SynthesisGeneration
-from synthesis.service import COOLDOWN_MINUTES, get_or_create_synthesis
+from synthesis.service import (
+    COOLDOWN_MINUTES,
+    UnsupportedSubjectTypeError,
+    get_or_create_synthesis,
+)
 from evidence_engine.config import get_settings
 from synthesis.keys import SYNTHESIS_PROMPT_VERSION, compute_cache_key
 from synthesis.validation import ValidationResult
@@ -288,10 +293,16 @@ def test_cooldown_is_still_honoured_at_the_exact_expiry_instant(db_session):
 
 
 def test_a_non_paper_subject_type_is_rejected_clearly(db_session):
+    # Deliberately NOT a ValueError. The endpoint maps ValueError to 404 because a
+    # ValueError from this service means "that paper id does not exist". An unsupported
+    # subject type is a different failure, and a future topics route that inherited the
+    # 404 mapping would report "topic <id> not found" when topics simply are not built.
     p1 = _paper(db_session, "Topicish")
 
-    with pytest.raises(ValueError, match="Unsupported subject_type"):
+    with pytest.raises(UnsupportedSubjectTypeError, match="Unsupported subject_type"):
         get_or_create_synthesis(db_session, "topic", [p1.id], generate=_ok())
+
+    assert not issubclass(UnsupportedSubjectTypeError, ValueError)
 
 
 def test_losing_the_insert_race_returns_the_winners_row(db_session):
@@ -313,7 +324,7 @@ def test_losing_the_insert_race_returns_the_winners_row(db_session):
                 cache_key=key,
                 subject_type="paper",
                 subject_ids=[p1.id],
-                inputs_fingerprint="winner",
+                inputs_fingerprint=_fingerprint_for(db_session, p1),
                 status="ready",
                 narrative="The winner's narrative.",
                 claims=[{"text": "Winner.", "citations": [0]}],
@@ -347,3 +358,100 @@ def test_losing_the_insert_race_returns_the_winners_row(db_session):
     # the row that actually survived.
     gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
     assert gen.synthesis_id == row.id
+
+
+def _fingerprint_for(session, paper):
+    """The fingerprint the service will compute for a single-paper request.
+
+    The race test originally hardcoded a nonsense value here, which quietly proved the
+    bug the recovery path had: it matched on cache_key alone and accepted a winner whose
+    inputs_fingerprint could not possibly have matched.
+    """
+    from synthesis.keys import MemberState, compute_inputs_fingerprint
+    from synthesis.service import _score_for
+
+    score = _score_for(session, paper.id)
+    return compute_inputs_fingerprint(
+        [
+            MemberState(
+                member_id=paper.id,
+                scored_at=score.scored_at if score else None,
+                final_score=score.final_score if score else None,
+                evidence_tier=score.evidence_tier.value if score and score.evidence_tier else None,
+                is_retracted=bool(paper.is_retracted),
+            )
+        ]
+    )
+
+
+def test_a_winner_built_from_different_inputs_is_not_returned(db_session):
+    # The recovery lookup matches on cache_key, but cache_key does not cover member
+    # state -- that is what inputs_fingerprint is for, and the normal cache-hit path
+    # checks it. A row under this key generated from different state (a score changed
+    # between the two requests' reads) must not be handed back as if it answered this
+    # request. It would be a narrative built from inputs this caller never saw, returned
+    # silently with nothing to signal the substitution.
+    p1 = _paper(db_session, "Divergent")
+
+    def insert_a_stale_winner(members, call=None):
+        key = compute_cache_key(
+            "paper", [p1.id], SYNTHESIS_PROMPT_VERSION, get_settings().anthropic_model
+        )
+        db_session.add(
+            ComparisonSynthesis(
+                cache_key=key,
+                subject_type="paper",
+                subject_ids=[p1.id],
+                inputs_fingerprint="a" * 64,  # deliberately not this request's fingerprint
+                status="ready",
+                narrative="Built from different member state.",
+                claims=[{"text": "Stale.", "citations": [0]}],
+                model_id=get_settings().anthropic_model,
+                prompt_version=SYNTHESIS_PROMPT_VERSION,
+            )
+        )
+        db_session.flush()
+        return (ValidationResult(ok=True, narrative="n", claims=[{"text": "c", "citations": [0]}]), 10)
+
+    with pytest.raises(IntegrityError):
+        get_or_create_synthesis(db_session, "paper", [p1.id], generate=insert_a_stale_winner)
+
+
+def test_telemetry_records_this_attempts_own_outcome_not_the_winners(db_session):
+    # outcome and synthesis_id are deliberately drawn from two different rows: outcome is
+    # what THIS call's generation produced, synthesis_id is the row that survived. They
+    # can legitimately disagree, and the original race test could not tell -- it made both
+    # rows "ready" and never asserted outcome at all.
+    p1 = _paper(db_session, "Divergent outcome")
+
+    def fail_but_lose_to_a_ready_winner(members, call=None):
+        key = compute_cache_key(
+            "paper", [p1.id], SYNTHESIS_PROMPT_VERSION, get_settings().anthropic_model
+        )
+        db_session.add(
+            ComparisonSynthesis(
+                cache_key=key,
+                subject_type="paper",
+                subject_ids=[p1.id],
+                inputs_fingerprint=_fingerprint_for(db_session, p1),
+                status="ready",
+                narrative="The winner succeeded.",
+                claims=[{"text": "Winner.", "citations": [0]}],
+                model_id=get_settings().anthropic_model,
+                prompt_version=SYNTHESIS_PROMPT_VERSION,
+            )
+        )
+        db_session.flush()
+        return (ValidationResult(ok=False, failure_reason="citation_density"), 42)
+
+    row = get_or_create_synthesis(
+        db_session, "paper", [p1.id], generate=fail_but_lose_to_a_ready_winner
+    )
+
+    assert row.status == "ready"
+    assert row.narrative == "The winner succeeded."
+
+    gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
+    assert gen.synthesis_id == row.id
+    assert gen.outcome == "failed"  # this attempt's own result, not the winner's
+    assert gen.latency_ms == 42

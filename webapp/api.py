@@ -285,11 +285,18 @@ def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> d
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="paper_ids must be UUIDs") from exc
 
-    user_id = payload.get("user_id")
+    # Parsed outside the block below on purpose. A ValueError from the service means
+    # "that paper id does not exist", which is a 404; a malformed user_id is a bad
+    # request shape. Parsing it inside that try mapped it to "paper not found", which is
+    # both the wrong status and a misleading message about the wrong field.
+    raw_user_id = payload.get("user_id")
     try:
-        row = get_or_create_synthesis(
-            db, "paper", paper_ids, user_id=uuid.UUID(user_id) if user_id else None
-        )
+        user_id = uuid.UUID(raw_user_id) if raw_user_id else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="user_id must be a UUID") from exc
+
+    try:
+        row = get_or_create_synthesis(db, "paper", paper_ids, user_id=user_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

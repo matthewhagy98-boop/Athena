@@ -20,6 +20,17 @@ from synthesis.prompt import MemberInput
 COOLDOWN_MINUTES = 60
 
 
+class UnsupportedSubjectTypeError(Exception):
+    """Raised for a subject_type this service does not implement.
+
+    Deliberately NOT a ValueError. Task 6's endpoint maps ValueError to 404 because a
+    ValueError from here means "that paper id does not exist". An unsupported subject
+    type is a different failure -- the input shape is wrong, not the id -- and a future
+    topics route that inherited the 404 mapping would tell a client "topic <id> not
+    found" when the real answer is "topics are not implemented yet".
+    """
+
+
 def _synthesis_enabled() -> bool:
     return get_settings().synthesis_enabled
 
@@ -70,7 +81,9 @@ def get_or_create_synthesis(
     # "Paper <id> not found" -- a paper-flavoured error for something never claimed to be
     # a paper, which Task 6 would then surface as a 404.
     if subject_type != "paper":
-        raise ValueError(f"Unsupported subject_type {subject_type!r}: only 'paper' is implemented")
+        raise UnsupportedSubjectTypeError(
+            f"Unsupported subject_type {subject_type!r}: only 'paper' is implemented"
+        )
 
     now = now or datetime.utcnow()
     generate = generate or default_generate
@@ -164,8 +177,14 @@ def get_or_create_synthesis(
                 ComparisonSynthesis.superseded_at.is_(None),
             )
         ).scalar_one_or_none()
-        if winner is None:
-            # The conflict was not the race we know how to recover from.
+        # cache_key alone is not enough to accept the winner. The normal cache-hit path
+        # above also requires a matching inputs_fingerprint, and for the same reason:
+        # a row under this key may have been generated from different member state (a
+        # score changed between the two requests' reads). Returning it would hand back a
+        # narrative built from inputs this request never saw -- silently, with no way to
+        # tell. A mismatch is not the race we know how to recover from, so re-raise and
+        # let it surface rather than guessing.
+        if winner is None or winner.inputs_fingerprint != fingerprint:
             raise
         persisted = winner
 

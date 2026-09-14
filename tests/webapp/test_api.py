@@ -454,3 +454,62 @@ def test_the_synthesis_member_cap_boundary_is_exact(db_session, monkeypatch):
     # The oversized request must be refused by validation, never by the service -- the
     # cap exists to stop the work from starting, not to discard its result.
     assert reached == [MAX_SYNTHESIS_MEMBERS]
+
+
+def test_synthesis_endpoint_rejects_a_malformed_user_id_as_422_not_404(db_session, monkeypatch):
+    # The user_id parse used to sit inside the try that maps ValueError to 404, so a bad
+    # user_id was reported as "paper not found" -- the wrong status, and a message about
+    # the wrong field entirely.
+    called = []
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        called.append(user_id)
+        return None
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    response = client.post(
+        "/synthesis/papers",
+        json={"paper_ids": [str(uuid.uuid4())], "user_id": "not-a-uuid"},
+    )
+
+    assert response.status_code == 422
+    assert "user_id" in response.json()["detail"]
+    assert called == []  # rejected before the service is reached
+
+
+def test_synthesis_endpoint_serializes_a_real_row_id(db_session, monkeypatch):
+    # Every other synthesis endpoint test builds a ComparisonSynthesis that is never
+    # flushed, so row.id is None and _synthesis_out renders the string "None". That made
+    # the id field invisible to the whole suite. This one flushes a real row.
+    from synthesis.models import ComparisonSynthesis
+
+    stored = ComparisonSynthesis(
+        cache_key="r" * 64,
+        subject_type="paper",
+        subject_ids=[],
+        inputs_fingerprint="f" * 64,
+        status="ready",
+        narrative="A grounded summary.",
+        claims=[],
+        disagreements=[],
+        strength_ranking=[],
+        retracted_member_indices=[],
+        model_id="m",
+        prompt_version="v1",
+    )
+    db_session.add(stored)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        "webapp.api.get_or_create_synthesis",
+        lambda *a, **k: stored,
+    )
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(stored.id)
+    assert response.json()["id"] != "None"
