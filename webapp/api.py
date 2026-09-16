@@ -295,6 +295,20 @@ def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> d
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="user_id must be a UUID") from exc
 
+    # An id that is well-formed but no longer in `users` is dropped rather than passed
+    # through. SynthesisGeneration.user_id is a FK, so an unknown id raises IntegrityError
+    # from the telemetry insert -- after the model call, and not a ValueError, so the
+    # handler below misses it and get_db rolls the whole transaction back. The result is
+    # one paid generation discarded, no cached row, no cooldown, a 500, and a panel
+    # message inviting the user to try again at full price, forever.
+    #
+    # Deliberately not _require_user: this is attribution for a telemetry row, and the
+    # column is nullable with ON DELETE SET NULL. Losing the attribution is the correct
+    # degradation; failing the request is not. Anonymous ids live in localStorage
+    # indefinitely, so a stale one long outlives the row it names.
+    if user_id is not None and db.get(User, user_id) is None:
+        user_id = None
+
     try:
         row = get_or_create_synthesis(db, "paper", paper_ids, user_id=user_id)
     except ValueError as exc:

@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from digest.profiles import create_user
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score, StudyType, Topic
+from sqlalchemy import select
+
 from webapp.api import app, get_db
 from webapp.search_index import sync_search_index
 
@@ -513,3 +515,47 @@ def test_synthesis_endpoint_serializes_a_real_row_id(db_session, monkeypatch):
     assert response.status_code == 200
     assert response.json()["id"] == str(stored.id)
     assert response.json()["id"] != "None"
+
+
+def test_synthesis_endpoint_survives_a_stale_user_id(db_session, monkeypatch):
+    # The only /synthesis/papers test that goes through the REAL service. Every other one
+    # monkeypatches it, which is exactly why this shipped: an unknown user_id reaches
+    # SynthesisGeneration's FK and raises IntegrityError -- after the model call, and not
+    # a ValueError, so the endpoint's handler misses it and the rollback destroys the
+    # generated row. One paid call per click, nothing cached, a 500, forever.
+    #
+    # Anonymous ids persist in localStorage indefinitely, and this repo's own conftest
+    # deletes anon users on every test run, so a developer hits this by running the suite
+    # and then opening the app.
+    from synthesis.models import ComparisonSynthesis, SynthesisGeneration
+    from synthesis.validation import ValidationResult
+
+    monkeypatch.setattr("synthesis.service._synthesis_enabled", lambda: True)
+
+    paper = Paper(title="Stale user paper", abstract="Abstract.")
+    db_session.add(paper)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        "synthesis.service.default_generate",
+        lambda members, call=None: (
+            ValidationResult(ok=True, narrative="Grounded.", claims=[{"text": "c", "citations": [0]}]),
+            10,
+        ),
+    )
+    client = _client(db_session)
+
+    response = client.post(
+        "/synthesis/papers",
+        json={"paper_ids": [str(paper.id)], "user_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["narrative"] == "Grounded."
+
+    # The work was kept: the synthesis persisted, and the telemetry row records the
+    # generation with its attribution dropped rather than the request failing.
+    assert db_session.execute(select(ComparisonSynthesis)).scalars().one() is not None
+    gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
+    assert gen.user_id is None
+    assert gen.outcome == "ready"
