@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from digest.profiles import create_user
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score, StudyType, Topic
+from sqlalchemy import select
+
 from webapp.api import app, get_db
 from webapp.search_index import sync_search_index
 
@@ -346,3 +348,248 @@ def test_saved_search_velocity_endpoint_404s_for_unknown_saved_search(db_session
     )
 
     assert response.status_code == 404
+
+
+def test_synthesis_endpoint_returns_narrative(db_session, monkeypatch):
+    from synthesis.models import ComparisonSynthesis
+
+    paper = Paper(title="Synthesis paper")
+    db_session.add(paper)
+    db_session.flush()
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        return ComparisonSynthesis(
+            cache_key="k" * 64,
+            subject_type=subject_type,
+            subject_ids=subject_ids,
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[{"text": "Claim.", "citations": [0]}],
+            disagreements=[],
+            strength_ranking=[0],
+            retracted_member_indices=[],
+            model_id="m",
+            prompt_version="v1",
+        )
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(paper.id)]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["narrative"] == "A grounded summary."
+    assert body["claims"][0]["citations"] == [0]
+
+
+def test_synthesis_endpoint_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", lambda *a, **k: None)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 503
+
+
+def test_synthesis_endpoint_returns_404_for_unknown_paper(db_session, monkeypatch):
+    def raising(*args, **kwargs):
+        raise ValueError("Paper deadbeef not found")
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", raising)
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 404
+
+
+def test_synthesis_endpoint_rejects_empty_and_oversized_selections(db_session):
+    client = _client(db_session)
+
+    assert client.post("/synthesis/papers", json={"paper_ids": []}).status_code == 422
+    too_many = {"paper_ids": [str(uuid.uuid4()) for _ in range(11)]}
+    assert client.post("/synthesis/papers", json=too_many).status_code == 422
+
+
+def test_the_synthesis_member_cap_boundary_is_exact(db_session, monkeypatch):
+    # The brief's selection test only checks 0 and 11, both of which reject, so a mutant
+    # moving the cutoff to 5 or 20 would pass it. MAX_SYNTHESIS_MEMBERS bounds the prompt
+    # size, the model cost per request, and the per-member session.get loop inside the
+    # service -- it is the reason that loop is acceptable -- so the exact boundary is the
+    # behaviour worth pinning, not "some large number is refused".
+    from synthesis.models import ComparisonSynthesis
+    from webapp.api import MAX_SYNTHESIS_MEMBERS
+
+    reached = []
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        reached.append(len(subject_ids))
+        return ComparisonSynthesis(
+            cache_key="k" * 64,
+            subject_type=subject_type,
+            subject_ids=subject_ids,
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[{"text": "Claim.", "citations": [0]}],
+            disagreements=[],
+            strength_ranking=[0],
+            retracted_member_indices=[],
+            model_id="m",
+            prompt_version="v1",
+        )
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    def post(n):
+        return client.post(
+            "/synthesis/papers", json={"paper_ids": [str(uuid.uuid4()) for _ in range(n)]}
+        )
+
+    assert post(MAX_SYNTHESIS_MEMBERS).status_code == 200
+    assert post(MAX_SYNTHESIS_MEMBERS + 1).status_code == 422
+
+    # The oversized request must be refused by validation, never by the service -- the
+    # cap exists to stop the work from starting, not to discard its result.
+    assert reached == [MAX_SYNTHESIS_MEMBERS]
+
+
+def test_synthesis_endpoint_rejects_a_malformed_user_id_as_422_not_404(db_session, monkeypatch):
+    # The user_id parse used to sit inside the try that maps ValueError to 404, so a bad
+    # user_id was reported as "paper not found" -- the wrong status, and a message about
+    # the wrong field entirely.
+    called = []
+
+    def fake_get_or_create(session, subject_type, subject_ids, user_id=None, **kwargs):
+        called.append(user_id)
+        return None
+
+    monkeypatch.setattr("webapp.api.get_or_create_synthesis", fake_get_or_create)
+    client = _client(db_session)
+
+    response = client.post(
+        "/synthesis/papers",
+        json={"paper_ids": [str(uuid.uuid4())], "user_id": "not-a-uuid"},
+    )
+
+    assert response.status_code == 422
+    assert "user_id" in response.json()["detail"]
+    assert called == []  # rejected before the service is reached
+
+
+def test_synthesis_endpoint_serializes_a_real_row_id(db_session, monkeypatch):
+    # Every other synthesis endpoint test builds a ComparisonSynthesis that is never
+    # flushed, so row.id is None and _synthesis_out renders the string "None". That made
+    # the id field invisible to the whole suite. This one flushes a real row.
+    from synthesis.models import ComparisonSynthesis
+
+    stored = ComparisonSynthesis(
+        cache_key="r" * 64,
+        subject_type="paper",
+        subject_ids=[],
+        inputs_fingerprint="f" * 64,
+        status="ready",
+        narrative="A grounded summary.",
+        claims=[],
+        disagreements=[],
+        strength_ranking=[],
+        retracted_member_indices=[],
+        model_id="m",
+        prompt_version="v1",
+    )
+    db_session.add(stored)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        "webapp.api.get_or_create_synthesis",
+        lambda *a, **k: stored,
+    )
+    client = _client(db_session)
+
+    response = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == str(stored.id)
+    assert response.json()["id"] != "None"
+
+
+def test_synthesis_endpoint_survives_a_stale_user_id(db_session, monkeypatch):
+    # The only /synthesis/papers test that goes through the REAL service. Every other one
+    # monkeypatches it, which is exactly why this shipped: an unknown user_id reaches
+    # SynthesisGeneration's FK and raises IntegrityError -- after the model call, and not
+    # a ValueError, so the endpoint's handler misses it and the rollback destroys the
+    # generated row. One paid call per click, nothing cached, a 500, forever.
+    #
+    # Anonymous ids persist in localStorage indefinitely, and this repo's own conftest
+    # deletes anon users on every test run, so a developer hits this by running the suite
+    # and then opening the app.
+    from synthesis.models import ComparisonSynthesis, SynthesisGeneration
+    from synthesis.validation import ValidationResult
+
+    monkeypatch.setattr("synthesis.service._synthesis_enabled", lambda: True)
+
+    paper = Paper(title="Stale user paper", abstract="Abstract.")
+    db_session.add(paper)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        "synthesis.service.default_generate",
+        lambda members, call=None: (
+            ValidationResult(ok=True, narrative="Grounded.", claims=[{"text": "c", "citations": [0]}]),
+            10,
+        ),
+    )
+    client = _client(db_session)
+
+    response = client.post(
+        "/synthesis/papers",
+        json={"paper_ids": [str(paper.id)], "user_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["narrative"] == "Grounded."
+
+    # The work was kept: the synthesis persisted, and the telemetry row records the
+    # generation with its attribution dropped rather than the request failing.
+    assert db_session.execute(select(ComparisonSynthesis)).scalars().one() is not None
+    gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
+    assert gen.user_id is None
+    assert gen.outcome == "ready"
+
+
+def test_synthesis_response_carries_provenance(db_session, monkeypatch):
+    # The panel must be able to say which model wrote the narrative and when. Without
+    # these two fields the provenance line the spec requires is not merely missing from
+    # the UI -- it is impossible to build from the API contract.
+    from datetime import datetime
+
+    from synthesis.models import ComparisonSynthesis
+
+    monkeypatch.setattr(
+        "webapp.api.get_or_create_synthesis",
+        lambda *a, **k: ComparisonSynthesis(
+            cache_key="p" * 64,
+            subject_type="paper",
+            subject_ids=[],
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[],
+            disagreements=[],
+            strength_ranking=[],
+            retracted_member_indices=[],
+            model_id="claude-sonnet-4-6",
+            prompt_version="v1",
+            generated_at=datetime(2026, 9, 15, 12, 0, 0),
+        ),
+    )
+    client = _client(db_session)
+
+    body = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]}).json()
+
+    assert body["model_id"] == "claude-sonnet-4-6"
+    assert body["generated_at"] == "2026-09-15T12:00:00Z"

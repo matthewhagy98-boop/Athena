@@ -7,6 +7,7 @@ import type {
   SavedSearchVelocityResponse,
   SearchParams,
   SearchResponse,
+  SynthesisResult,
   TierDistribution,
   TimelineBucket,
   TopicCompareResponse,
@@ -120,6 +121,16 @@ export function useCitationHistory(paperId: string | null, days = 365) {
       apiGet<CitationHistoryResponse>(`/papers/${paperId}/citation-history`, { days }),
     enabled: paperId !== null,
     staleTime: VELOCITY_STALE_MS,
+  });
+}
+
+export function useSynthesis() {
+  return useMutation({
+    mutationFn: (input: { paperIds: string[]; userId: string | null }) =>
+      apiPost<SynthesisResult>("/synthesis/papers", {
+        paper_ids: input.paperIds,
+        user_id: input.userId,
+      }),
   });
 }
 

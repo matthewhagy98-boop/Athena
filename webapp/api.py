@@ -13,6 +13,7 @@ from digest.profiles import create_anonymous_user
 from evidence_engine.db.models import EvidenceTier, Paper, PaperTopic, StudyType, Topic
 from evidence_engine.db.session import SessionLocal
 
+from synthesis.service import get_or_create_synthesis
 from webapp.compare import compare_papers, compare_topics
 from webapp.saved_searches import (
     _get_owned_saved_search,
@@ -252,6 +253,75 @@ def saved_search_velocity_endpoint(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return saved_search_velocity(db, saved, weeks=weeks)
+
+
+MAX_SYNTHESIS_MEMBERS = 10
+
+
+def _synthesis_out(row) -> dict:
+    return {
+        "id": str(row.id),
+        "status": row.status,
+        "narrative": row.narrative,
+        "claims": row.claims,
+        "disagreements": row.disagreements,
+        "strength_ranking": row.strength_ranking,
+        "retracted_member_indices": row.retracted_member_indices,
+        "failure_reason": row.failure_reason,
+        "subject_ids": [str(i) for i in row.subject_ids],
+        # Provenance: spec line 16 requires a visible line naming the model and when the
+        # narrative was generated. A reader deciding how much weight to give AI-written
+        # prose needs to know which model wrote it and how stale it is.
+        "model_id": row.model_id,
+        "generated_at": row.generated_at.isoformat() + "Z" if row.generated_at else None,
+    }
+
+
+@app.post("/synthesis/papers")
+def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> dict:
+    raw_ids = payload.get("paper_ids") or []
+    if not raw_ids or len(raw_ids) > MAX_SYNTHESIS_MEMBERS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"paper_ids must contain between 1 and {MAX_SYNTHESIS_MEMBERS} ids",
+        )
+    try:
+        paper_ids = [uuid.UUID(str(i)) for i in raw_ids]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="paper_ids must be UUIDs") from exc
+
+    # Parsed outside the block below on purpose. A ValueError from the service means
+    # "that paper id does not exist", which is a 404; a malformed user_id is a bad
+    # request shape. Parsing it inside that try mapped it to "paper not found", which is
+    # both the wrong status and a misleading message about the wrong field.
+    raw_user_id = payload.get("user_id")
+    try:
+        user_id = uuid.UUID(raw_user_id) if raw_user_id else None
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="user_id must be a UUID") from exc
+
+    # An id that is well-formed but no longer in `users` is dropped rather than passed
+    # through. SynthesisGeneration.user_id is a FK, so an unknown id raises IntegrityError
+    # from the telemetry insert -- after the model call, and not a ValueError, so the
+    # handler below misses it and get_db rolls the whole transaction back. The result is
+    # one paid generation discarded, no cached row, no cooldown, a 500, and a panel
+    # message inviting the user to try again at full price, forever.
+    #
+    # Deliberately not _require_user: this is attribution for a telemetry row, and the
+    # column is nullable with ON DELETE SET NULL. Losing the attribution is the correct
+    # degradation; failing the request is not. Anonymous ids live in localStorage
+    # indefinitely, so a stale one long outlives the row it names.
+    if user_id is not None and db.get(User, user_id) is None:
+        user_id = None
+
+    try:
+        row = get_or_create_synthesis(db, "paper", paper_ids, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if row is None:
+        raise HTTPException(status_code=503, detail="Synthesis is not enabled")
+    return _synthesis_out(row)
 
 
 from pathlib import Path
