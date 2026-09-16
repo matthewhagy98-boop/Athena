@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../identity/identity";
 import { server } from "../test/server";
 import { SearchPage } from "./SearchPage";
+import type { PaperVelocity } from "../api/types";
 
 function row(id: string, title: string) {
   return {
@@ -58,6 +59,7 @@ test("renders a velocity figure on a card that has history", async () => {
             cohort_size: 34,
             is_retracted: false,
             computed_at: new Date().toISOString(),
+            recent_counts: [100, 104, 109, 112, 121, 126],
           },
           p2: {
             status: "insufficient_history",
@@ -92,7 +94,7 @@ test("a failed velocity request leaves the results fully usable", async () => {
 });
 
 test("shows one page-level notice when every row lacks history", async () => {
-  const none = (_id: string) => ({
+  const none = (_id: string): PaperVelocity => ({
     status: "insufficient_history",
     velocity_per_30d: null,
     window_start_observed_at: null,
@@ -103,6 +105,7 @@ test("shows one page-level notice when every row lacks history", async () => {
     cohort_size: 0,
     is_retracted: false,
     computed_at: new Date().toISOString(),
+    recent_counts: [],
   });
   server.use(
     http.get("/papers/velocity", () =>
@@ -115,4 +118,38 @@ test("shows one page-level notice when every row lacks history", async () => {
     const notice = screen.getByRole("status");
     expect(notice).toHaveTextContent(/citation tracking is still building history/i);
   });
+});
+
+test("a search result row renders the sparkline beside its figure", async () => {
+  // The component tests cover the sparkline in isolation; nothing covered it on the
+  // surface it was built for. These page fixtures were untyped object literals, so when
+  // recent_counts was added the compiler did not flag them and every integration test
+  // silently exercised the no-sparkline path. They are typed as PaperVelocity now, so the
+  // next field addition breaks the build instead of quietly skipping coverage.
+  server.use(
+    http.get("/papers/velocity", () =>
+      HttpResponse.json({
+        velocities: {
+          p1: {
+            status: "ready",
+            velocity_per_30d: 14,
+            window_start_observed_at: null,
+            window_end_observed_at: null,
+            observation_count: 6,
+            first_observed_at: "2026-06-28T04:00:00Z",
+            percentile: 88,
+            cohort_size: 34,
+            is_retracted: false,
+            computed_at: new Date().toISOString(),
+            recent_counts: [100, 104, 109, 112, 121, 126],
+          } satisfies PaperVelocity,
+        },
+      }),
+    ),
+  );
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/citations in the last 30 days/i)).toBeInTheDocument());
+  // Decorative, so it is found by attribute rather than accessible name.
+  expect(document.querySelector('[aria-hidden="true"]')).not.toBeNull();
 });

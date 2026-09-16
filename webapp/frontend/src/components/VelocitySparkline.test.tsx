@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { VelocitySparkline } from "./VelocitySparkline";
+import { SPARKLINE_HEIGHT_CLASS, VelocitySparkline } from "./VelocitySparkline";
 
 test.each([0, 1, 2])("renders nothing below three points (n=%i)", (n) => {
   const points = Array.from({ length: n }, (_, i) => i);
@@ -21,4 +21,24 @@ test("the rendered wrapper is aria-hidden, since the badge text carries the acce
   const { container } = render(<VelocitySparkline points={[1, 2, 3]} />);
 
   expect(container.firstChild).toHaveAttribute("aria-hidden", "true");
+});
+
+test("the sparkline fits inside the badge's reserved height", () => {
+  // jsdom does no layout, so this cannot be measured -- it is asserted structurally.
+  // The badge reserves min-h-5 (20px); a 20px inline-block on align-middle stretched the
+  // line box to ~24px and shifted every search-result row the moment a velocity arrived.
+  // h-4 (16px) matches the text's line box, and align-text-bottom keeps it on the
+  // baseline rather than recentring it.
+  const { container } = render(<VelocitySparkline points={[1, 2, 3]} />);
+  const wrapper = container.querySelector('[aria-hidden="true"]');
+
+  expect(SPARKLINE_HEIGHT_CLASS).toBe("h-4");
+  expect(wrapper).toHaveClass(SPARKLINE_HEIGHT_CLASS);
+  expect(wrapper).toHaveClass("align-text-bottom");
+  expect(wrapper).not.toHaveClass("h-5");
+  expect(wrapper).not.toHaveClass("align-middle");
+  // Width is part of the same constraint: this sits inline between the figure and the
+  // percentile clause, so widening it pushes that clause toward a second line on a narrow
+  // card -- the same shift by a different route.
+  expect(wrapper).toHaveClass("w-16");
 });

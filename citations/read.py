@@ -1,11 +1,16 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from citations.models import CitationSnapshot, CitationVelocityCache
 from evidence_engine.db.models import Paper
+
+# Trailing observations sent per paper for the badge sparkline. At the job's daily
+# cadence this is a few weeks of trend -- enough shape to read, small enough that a
+# 50-row search page stays a modest payload.
+RECENT_COUNTS_LIMIT = 12
 
 
 def iso_utc(value) -> str | None:
@@ -23,7 +28,7 @@ def iso_utc(value) -> str | None:
     return value.isoformat() + "Z"
 
 
-def _empty_block(is_retracted: bool) -> dict:
+def _empty_block(is_retracted: bool, recent_counts: list[int] | None = None) -> dict:
     # A paper the collection job has never reached is indistinguishable, from the
     # reader's point of view, from one with a single observation: neither can
     # produce a velocity. Both read as insufficient_history rather than as an error.
@@ -38,7 +43,94 @@ def _empty_block(is_retracted: bool) -> dict:
         "cohort_size": 0,
         "is_retracted": is_retracted,
         "computed_at": None,
+        # Carries whatever history exists even though this block means "not enough
+        # history to compute a velocity". The two are different questions: a paper can
+        # have several observations and still lack a pair the velocity window accepts.
+        # The query has already fetched this, so returning [] here would discard data we
+        # paid for and make the field mean "no history" in one branch and "no data yet"
+        # in another.
+        "recent_counts": recent_counts or [],
     }
+
+
+def _recent_counts_by_paper(session: Session, paper_ids: list[uuid.UUID]) -> dict:
+    """Trailing citation counts per paper, oldest first, for the badge sparkline.
+
+    One batched query, not one per paper: the search page asks for up to 50 papers
+    at a time, and a per-paper query would turn this endpoint's single round trip
+    into 50 -- which is the reason it is batched at all.
+
+    Bounded in SQL, not in Python. Selecting every snapshot and slicing afterwards is
+    still one query, but an unbounded one: at a daily cadence a 50-row search page would
+    fetch ~18k rows after a year and ~55k after three, to produce 600 integers. The
+    row_number() window keeps it to RECENT_COUNTS_LIMIT per paper no matter how long
+    collection has been running.
+
+    The series is TRUNCATED at the most recent anomalous snapshot, inclusive, rather than
+    having anomalous rows filtered out of it. An anomalous row marks the point where a
+    provider record merge was detected, and velocity.py treats that post-merge count as a
+    valid new baseline (citations/velocity.py:52-55) -- which means every count before it
+    belongs to a different record and is not comparable with what follows.
+
+    Merely dropping the flagged row would remove the marker and leave the discontinuity:
+    a series like [100, 104, 109, 15, 19] still plunges, and the sparkline would draw a
+    cliff that is a bookkeeping artifact rather than citation history -- beside a figure
+    engineered to exclude that very cliff. Truncating yields [15, 19]... starting at the
+    anomalous row itself, since that is the first observation on the new baseline.
+
+    A paper with no anomaly keeps its whole (capped) history, via the outer join.
+
+    Ordering is by observed_at within a paper, backed by ix_citation_snapshots_paper_observed.
+    Only semantic_scholar writes snapshots today; the unique constraint permits a second
+    source per day, which would interleave two series into one line if one is ever added.
+    """
+    # Per paper, the newest anomalous observation -- the record merge to truncate at.
+    last_anomaly = (
+        select(
+            CitationSnapshot.paper_id.label("pid"),
+            func.max(CitationSnapshot.observed_at).label("cutoff"),
+        )
+        .where(
+            CitationSnapshot.paper_id.in_(paper_ids),
+            CitationSnapshot.is_anomalous.is_(True),
+        )
+        .group_by(CitationSnapshot.paper_id)
+        .subquery()
+    )
+
+    ranked = (
+        select(
+            CitationSnapshot.paper_id,
+            CitationSnapshot.citation_count,
+            func.row_number()
+            .over(
+                partition_by=CitationSnapshot.paper_id,
+                order_by=CitationSnapshot.observed_at.desc(),
+            )
+            .label("rn"),
+        )
+        .outerjoin(last_anomaly, last_anomaly.c.pid == CitationSnapshot.paper_id)
+        .where(
+            CitationSnapshot.paper_id.in_(paper_ids),
+            or_(
+                last_anomaly.c.cutoff.is_(None),
+                CitationSnapshot.observed_at >= last_anomaly.c.cutoff,
+            ),
+        )
+        .subquery()
+    )
+
+    rows = session.execute(
+        select(ranked.c.paper_id, ranked.c.citation_count)
+        .where(ranked.c.rn <= RECENT_COUNTS_LIMIT)
+        # rn counts backwards from the newest, so descending rn is oldest-first.
+        .order_by(ranked.c.paper_id, ranked.c.rn.desc())
+    ).all()
+
+    series: dict = {}
+    for paper_id, count in rows:
+        series.setdefault(paper_id, []).append(count)
+    return series
 
 
 def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
@@ -51,6 +143,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
         row.id: bool(row.is_retracted)
         for row in session.execute(select(Paper).where(Paper.id.in_(paper_ids))).scalars().all()
     }
+    recent_counts = _recent_counts_by_paper(session, paper_ids)
     caches = {
         row.paper_id: row
         for row in session.execute(
@@ -65,7 +158,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
         is_retracted = retracted.get(paper_id, False)
         cache = caches.get(paper_id)
         if cache is None:
-            out[paper_id] = _empty_block(is_retracted)
+            out[paper_id] = _empty_block(is_retracted, recent_counts.get(paper_id, []))
             continue
         out[paper_id] = {
             "status": cache.status,
@@ -81,6 +174,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
             "cohort_size": cache.cohort_size,
             "is_retracted": is_retracted,
             "computed_at": iso_utc(cache.computed_at),
+            "recent_counts": recent_counts.get(paper_id, []),
         }
     return out
 
