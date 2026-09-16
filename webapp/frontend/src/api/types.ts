@@ -124,4 +124,6 @@ export interface SynthesisResult {
   retracted_member_indices: number[];
   failure_reason: string | null;
   subject_ids: string[];
+  model_id: string | null;
+  generated_at: string | null;
 }

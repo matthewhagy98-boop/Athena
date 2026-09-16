@@ -91,7 +91,19 @@ export function SynthesisPanel({ paperIds }: { paperIds: string[] }) {
           {result.retracted_member_indices.length > 0 && (
             <p className="mb-2 rounded border border-error/40 p-2 text-xs text-error">
               This comparison includes {result.retracted_member_indices.length} retracted
-              {result.retracted_member_indices.length === 1 ? " study" : " studies"}.
+              {result.retracted_member_indices.length === 1 ? " study" : " studies"}
+              {/* Naming the count without naming the study tells a researcher something
+                  is wrong and gives them no way to find it. These are indices into
+                  subject_ids, exactly like citations, so the same resolver applies. */}
+              {(() => {
+                const positions = resolveCitationPositions(
+                  result.retracted_member_indices,
+                  result.subject_ids,
+                  paperIds,
+                );
+                return positions.length > 0 ? <> ({positions.join(", ")})</> : null;
+              })()}
+              .
             </p>
           )}
           <p className="mb-3 font-serif text-sm leading-relaxed text-on-surface">{result.narrative}</p>
@@ -100,10 +112,51 @@ export function SynthesisPanel({ paperIds }: { paperIds: string[] }) {
               <ClaimRow key={i} claim={claim} subjectIds={result.subject_ids} paperIds={paperIds} />
             ))}
           </ul>
+          {/* FR-B-005 makes disagreements a MUST, and they travelled through the tool
+              schema, the validator, a DB column, the serializer and the TS interface only
+              to be dropped here. Where studies conflict is the most decision-relevant
+              thing a comparison can tell a researcher -- more so than where they agree. */}
+          {result.disagreements.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                Points of disagreement
+              </p>
+              <ul className="space-y-1">
+                {result.disagreements.map((d, i) => {
+                  const positions = resolveCitationPositions(
+                    d.indices,
+                    result.subject_ids,
+                    paperIds,
+                  );
+                  return (
+                    <li key={i} className="text-xs text-on-surface-variant">
+                      {d.description}
+                      {positions.length > 0 && (
+                        <>
+                          {" "}
+                          <span className="text-secondary">[{positions.join(" vs ")}]</span>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           <p className="mt-3 text-xs text-on-surface-variant">
             Generated from the {result.subject_ids.length} studies compared here. Bracketed
             numbers refer to their position in the comparison below.
           </p>
+          {/* Provenance, per spec line 16. A reader weighing AI-written prose needs to
+              know which model wrote it and how stale it is. */}
+          {result.model_id && (
+            <p className="mt-1 text-xs text-on-surface-variant">
+              Written by {result.model_id}
+              {result.generated_at && <> on {new Date(result.generated_at).toLocaleDateString()}</>}.
+              AI-generated; verify against the studies before relying on it.
+            </p>
+          )}
         </>
       )}
     </section>

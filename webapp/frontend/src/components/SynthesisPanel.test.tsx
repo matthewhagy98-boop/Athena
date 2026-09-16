@@ -219,3 +219,73 @@ test("resolves citations through subject_ids so a shuffled paperIds prop still c
   // The brief's rejected approach (claim.citations.map(c => c + 1)) would render "[1, 3]".
   expect(screen.queryByText("[1, 3]")).not.toBeInTheDocument();
 });
+
+test("renders the disagreement list with resolved card positions", async () => {
+  // Disagreements travelled through the tool schema, validator, DB column, serializer and
+  // TS interface and were then dropped at the last step. Where studies conflict is the
+  // most decision-relevant thing a comparison can report.
+  server.use(
+    http.post("/synthesis/papers", () =>
+      HttpResponse.json({
+        ...READY,
+        subject_ids: ["p2", "p1"],
+        disagreements: [{ indices: [0, 1], description: "Effect direction differs." }],
+      }),
+    ),
+  );
+  render(<SynthesisPanel paperIds={["p1", "p2"]} />, { wrapper });
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() => expect(screen.getByText(/points of disagreement/i)).toBeInTheDocument());
+  expect(screen.getByText(/effect direction differs/i)).toBeInTheDocument();
+  // subject_ids[0]="p2" -> card 2; subject_ids[1]="p1" -> card 1. Positional rendering
+  // would show "1 vs 2".
+  expect(screen.getByText("[2 vs 1]")).toBeInTheDocument();
+});
+
+test("names which study is retracted, not just how many", async () => {
+  // A count with no identity tells a researcher something is wrong and gives them no way
+  // to find it. Retracted indices are positions in subject_ids, like citations.
+  server.use(
+    http.post("/synthesis/papers", () =>
+      HttpResponse.json({
+        ...READY,
+        subject_ids: ["p2", "p1"],
+        retracted_member_indices: [0],
+      }),
+    ),
+  );
+  render(<SynthesisPanel paperIds={["p1", "p2"]} />, { wrapper });
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  // subject_ids[0] = "p2", which the grid displays second.
+  await waitFor(() => expect(screen.getByText(/includes 1 retracted study \(2\)/i)).toBeInTheDocument());
+});
+
+test("shows a provenance line naming the model and date", async () => {
+  server.use(
+    http.post("/synthesis/papers", () =>
+      HttpResponse.json({ ...READY, model_id: "claude-sonnet-4-6", generated_at: "2026-09-15T12:00:00Z" }),
+    ),
+  );
+  renderPanel();
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() => expect(screen.getByText(/written by claude-sonnet-4-6/i)).toBeInTheDocument());
+  expect(screen.getByText(/ai-generated; verify against the studies/i)).toBeInTheDocument();
+});
+
+test("omits the provenance line when the payload lacks it", async () => {
+  // Velocity taught this lesson: an added field that an older or partial payload lacks
+  // must not take the panel down with it.
+  server.use(http.post("/synthesis/papers", () => HttpResponse.json(READY)));
+  renderPanel();
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() => expect(screen.getByText(/both studies point the same way/i)).toBeInTheDocument());
+  expect(screen.queryByText(/written by/i)).not.toBeInTheDocument();
+});
