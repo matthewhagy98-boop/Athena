@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from citations.models import CitationSnapshot, CitationVelocityCache
@@ -28,7 +28,7 @@ def iso_utc(value) -> str | None:
     return value.isoformat() + "Z"
 
 
-def _empty_block(is_retracted: bool) -> dict:
+def _empty_block(is_retracted: bool, recent_counts: list[int] | None = None) -> dict:
     # A paper the collection job has never reached is indistinguishable, from the
     # reader's point of view, from one with a single observation: neither can
     # produce a velocity. Both read as insufficient_history rather than as an error.
@@ -43,7 +43,13 @@ def _empty_block(is_retracted: bool) -> dict:
         "cohort_size": 0,
         "is_retracted": is_retracted,
         "computed_at": None,
-        "recent_counts": [],
+        # Carries whatever history exists even though this block means "not enough
+        # history to compute a velocity". The two are different questions: a paper can
+        # have several observations and still lack a pair the velocity window accepts.
+        # The query has already fetched this, so returning [] here would discard data we
+        # paid for and make the field mean "no history" in one branch and "no data yet"
+        # in another.
+        "recent_counts": recent_counts or [],
     }
 
 
@@ -54,19 +60,53 @@ def _recent_counts_by_paper(session: Session, paper_ids: list[uuid.UUID]) -> dic
     at a time, and a per-paper query would turn this endpoint's single round trip
     into 50 -- which is the reason it is batched at all.
 
-    Capped per paper, keeping the NEWEST points. Dropping the newest instead would
-    render a stale window as though it were the current trend.
+    Bounded in SQL, not in Python. Selecting every snapshot and slicing afterwards is
+    still one query, but an unbounded one: at a daily cadence a 50-row search page would
+    fetch ~18k rows after a year and ~55k after three, to produce 600 integers. The
+    row_number() window keeps it to RECENT_COUNTS_LIMIT per paper no matter how long
+    collection has been running.
+
+    Anomalous snapshots are excluded. An anomalous row marks a provider record merge,
+    and velocity.py deliberately refuses to compute across one because the drop is an
+    artifact rather than real citation history (citations/velocity.py:52-65). Plotting
+    them here would put a cliff in the sparkline beside a figure engineered to exclude
+    it -- two artifacts from the same table, in the same badge, disagreeing. The
+    sparkline has no affordance to mark a point as suspect the way get_citation_history
+    does, so excluding is the only honest option.
+
+    Ordering is by observed_at within a paper, backed by ix_citation_snapshots_paper_observed.
+    Only semantic_scholar writes snapshots today; the unique constraint permits a second
+    source per day, which would interleave two series into one line if one is ever added.
     """
+    ranked = (
+        select(
+            CitationSnapshot.paper_id,
+            CitationSnapshot.citation_count,
+            func.row_number()
+            .over(
+                partition_by=CitationSnapshot.paper_id,
+                order_by=CitationSnapshot.observed_at.desc(),
+            )
+            .label("rn"),
+        )
+        .where(
+            CitationSnapshot.paper_id.in_(paper_ids),
+            CitationSnapshot.is_anomalous.is_(False),
+        )
+        .subquery()
+    )
+
     rows = session.execute(
-        select(CitationSnapshot.paper_id, CitationSnapshot.citation_count)
-        .where(CitationSnapshot.paper_id.in_(paper_ids))
-        .order_by(CitationSnapshot.paper_id, CitationSnapshot.observed_at)
+        select(ranked.c.paper_id, ranked.c.citation_count)
+        .where(ranked.c.rn <= RECENT_COUNTS_LIMIT)
+        # rn counts backwards from the newest, so descending rn is oldest-first.
+        .order_by(ranked.c.paper_id, ranked.c.rn.desc())
     ).all()
 
     series: dict = {}
     for paper_id, count in rows:
         series.setdefault(paper_id, []).append(count)
-    return {pid: counts[-RECENT_COUNTS_LIMIT:] for pid, counts in series.items()}
+    return series
 
 
 def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
@@ -94,7 +134,7 @@ def get_paper_velocities(session: Session, paper_ids: list[uuid.UUID]) -> dict:
         is_retracted = retracted.get(paper_id, False)
         cache = caches.get(paper_id)
         if cache is None:
-            out[paper_id] = _empty_block(is_retracted)
+            out[paper_id] = _empty_block(is_retracted, recent_counts.get(paper_id, []))
             continue
         out[paper_id] = {
             "status": cache.status,

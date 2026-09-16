@@ -1799,6 +1799,21 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 
 **Decided 2026-09-09: the user chose to skip the rate limit for now.** Reviewers should not raise its absence as a finding. The residual exposure is that a direct caller can drive repeated search re-execution through `GET /saved-searches/{id}/velocity`; this is acceptable while Athena has no individual-user authentication and no public deployment, and it should be revisited alongside the shared limiter. The 10-row client cap in Task 7 stays, and is now the only thing bounding this endpoint — do not remove it. The topic-detail sparkline column and mobile column-shedding (spec §8) are also omitted; they depend on the table redesign the spec assumes and are not worth blocking the primary surfaces.
 
+> **Amendment, 2026-09-16.** The omission above left `VelocitySparkline` built, tested and
+> mounted nowhere. On explicit user instruction ("wire the sparkline in next to the badge
+> figure") it was relocated to the citation-velocity badge on search results -- a placement
+> with no spec section 8 backing, on the surface this plan is otherwise most protective of.
+> The instruction supersedes the omission; recording it here so the branch does not read as
+> quietly reversing a considered decision.
+>
+> Three consequences of the new placement were found by review and fixed rather than
+> accepted: the batched series query was bounded in SQL (it was one query but unbounded in
+> rows, which only matters on the hottest read path as history accumulates); anomalous
+> snapshots are excluded, matching `velocity.py`'s existing refusal to compute across a
+> provider record merge; and the sparkline was resized to sit inside the badge's reserved
+> line box, since a 20px inline-block on `align-middle` stretched it and reintroduced the
+> layout shift this plan forbids.
+
 **Placeholder scan.** No TBD/TODO markers; every code step carries complete code; every test asserts specific values.
 
 **Type consistency.** `PaperVelocity` fields match between Task 4's TypeScript and Task 1's Python serialization field-for-field, including `computed_at` being nullable (Task 1 emits `None` for a paper with no cache row — Task 4's type says `string | null`, and Task 5's `daysSince` handles null). `VelocitySparkline`'s `points: number[]` matches its only caller. `saved_search_velocity(session, saved_search, weeks)` is called in Task 3 with exactly that signature.
