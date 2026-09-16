@@ -290,7 +290,13 @@ def test_fingerprint_changes_when_member_score_changes():
 
 def test_fingerprint_stable_across_float_repr():
     # Rounded to 1 decimal before hashing, so float noise cannot invalidate a cache entry.
-    a = [MemberState(ID_A, None, 91.40000000000001, "established", False)]
+    # The noisy value MUST come from arithmetic. The literal 91.40000000000001 parses to
+    # the same float64 as 91.4, so using it makes this test pass with or without the
+    # rounding. See the amendment note below.
+    noisy = 91.3 + 0.1  # 91.39999999999999 -- a genuinely distinct double
+    assert noisy != 91.4, "the noise value must differ as a float, or this proves nothing"
+
+    a = [MemberState(ID_A, None, noisy, "established", False)]
     b = [MemberState(ID_A, None, 91.4, "established", False)]
     assert compute_inputs_fingerprint(a) == compute_inputs_fingerprint(b)
 
@@ -313,6 +319,39 @@ def test_fingerprint_is_order_independent():
     m2 = MemberState(ID_B, None, 2.0, "emerging", False)
     assert compute_inputs_fingerprint([m1, m2]) == compute_inputs_fingerprint([m2, m1])
 ```
+
+### Amendment 2026-09-12: this test list had no teeth
+
+Task 2's review found that the fingerprint tests as originally written could not detect
+the regressions they were named for. Every gap below was verified by mutation — the fix
+is in the shipped tests, and the list here is corrected so a re-run of this plan does not
+reintroduce them.
+
+- **`test_fingerprint_stable_across_float_repr` was vacuous.** `91.40000000000001` and
+  `91.4` are the *same* float64 (`a == b` is `True`, both render as `91.4`), so the two
+  sides were identical before hashing and the test passed with `round(..., 1)` deleted.
+  Corrected above to derive the noisy value arithmetically.
+- **Nothing pinned how much precision the rounding is allowed to discard.** Add
+  `test_fingerprint_still_changes_on_a_real_one_decimal_difference`, and note the pair
+  must differ at 1 decimal *and* collapse at 0: `91.4` vs `91.5` does **not** work
+  (`round(91.5, 0)` is `92.0`, so they still differ and rounding-to-0 survives). Use
+  `91.4` vs `91.3`.
+- **`scored_at` and `evidence_tier` were never varied alone.**
+  `test_unscored_member_contributes_none_placeholders` changes three fields at once, so
+  either field could be dropped from the hash with no test failing — and dropping
+  `scored_at` silently breaks the staleness guarantee the whole cache rests on. Add one
+  single-field test each.
+- **`member_id` was only proven neutral under reordering, never proven to be hashed.**
+  Add `test_fingerprint_changes_when_only_member_id_changes`, plus
+  `test_fingerprint_changes_when_a_member_is_added` — a larger comparison must not reuse
+  the narrative written for the smaller set.
+
+Also: `evidence_tier or "none"` in `keys.py` was changed to an explicit `is None` check,
+matching the style already used for `scored_at` and `final_score`, so a falsy-but-present
+tier cannot hash as "no tier".
+
+The bar for this file: each mutation — drop the rounding, round to 0, drop any one of the
+five hashed fields — must fail exactly one test.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1375,6 +1414,34 @@ git commit -m "feat: add POST /synthesis/papers endpoint"
 Generation is explicitly user-triggered rather than automatic on page load, so a page visit never silently incurs model cost.
 
 Every `material-symbols-outlined` span must carry `aria-hidden="true"`, and colors come from design tokens only.
+
+### Decision 2026-09-12: citation indices resolve through `subject_ids`, not by position
+
+Pre-flight review of this plan found that citation indices and displayed card positions
+are two different orderings, and the panel as drafted conflated them:
+
+- `_load_papers` (Task 5) sorts members by `str(uuid)` before building the prompt, so a
+  citation index is a position in **UUID-sorted** order. That sort is deliberate — it is
+  what makes the cache key order-independent, so one stored row serves every selection
+  order (`test_member_order_does_not_produce_a_second_row`).
+- `compare_papers` (`webapp/compare.py:36-42`) iterates `paper_ids` as given, so the
+  Compare grid renders cards in **selection** order.
+
+The two coincide only by accident, so the drafted caption "Bracketed numbers refer to
+their position above" would have pointed readers at the wrong study most of the time —
+violating this plan's own constraint that citations be resolvable member indices.
+
+Generating in display order was rejected: the cache key ignores order by design, so a
+second user with a different selection order would get a cache hit whose indices encode
+the first user's ordering. That moves the bug rather than fixing it.
+
+**Resolution.** Keep the canonical sorted order for generation and storage. `_synthesis_out`
+already returns `subject_ids` in that same sorted order, so the panel has what it needs:
+map citation index → `result.subject_ids[index]` → the card holding that paper id, and
+render **that card's** displayed position. Step 5's `claim.citations.map((c) => c + 1)`
+must be replaced accordingly, and Step 3 gains a test that a shuffled `paperIds` prop
+still cites the correct studies — that test is the point of this decision, so it must
+fail against positional rendering.
 
 - [ ] **Step 1: Add the type**
 

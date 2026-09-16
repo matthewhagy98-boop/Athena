@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { useComparePapers, useCompareTopics, useTopics } from "../api/hooks";
 import { CitationHistoryChart } from "../components/CitationHistoryChart";
 import { EvidenceIndicator } from "../components/EvidenceIndicator";
+import { SynthesisPanel } from "../components/SynthesisPanel";
 
 function UnresolvedNotice({ ids }: { ids: string[] }) {
   if (ids.length === 0) return null;
@@ -44,6 +45,7 @@ export function ComparePage() {
           )}
           {papers.data && (
             <>
+              <SynthesisPanel paperIds={paperIds} />
               <UnresolvedNotice ids={papers.data.unresolved_ids} />
               <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
                 {papers.data.rows.map((row) => (
