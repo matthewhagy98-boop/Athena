@@ -240,3 +240,41 @@ def test_a_disagreement_naming_more_than_two_members_is_dropped():
     result = validate_response(raw, member_count=3)
 
     assert [d["description"] for d in result.disagreements] == ["kept"]
+
+
+def test_a_claim_citing_both_clean_and_retracted_work_is_stripped():
+    # The central judgement call of the retraction rule, and it had no test: `any` could
+    # be narrowed to `all` and all 106 tests still passed. The two readings differ only
+    # for a claim citing a valid member AND a retracted one, with enough clean claims
+    # alongside that density survives either way.
+    #
+    # The literal spec reading -- any citation to retracted work disqualifies the claim --
+    # is kept deliberately. The alternative, stripping just the retracted index and keeping
+    # the claim, would let "Both studies found X" survive citing only one study: a false
+    # statement wearing a valid-looking citation, which is worse than saying nothing.
+    raw = _raw(
+        claims=[
+            {"text": "Clean one.", "citations": [0]},
+            {"text": "Clean two.", "citations": [0]},
+            {"text": "Leans partly on the retraction.", "citations": [0, 2]},
+        ]
+    )
+
+    result = validate_response(raw, member_count=3, retracted_indices=[2])
+
+    # Density is 2/3 either way, so `ok` cannot distinguish the readings -- the surviving
+    # claim texts are what does.
+    assert result.ok is True
+    assert [c["text"] for c in result.claims] == ["Clean one.", "Clean two."]
+
+
+def test_strength_ranking_naming_only_an_unscored_member_is_dropped():
+    # The permutation check compares sets, and nothing pinned that: replacing it with a
+    # length comparison passed everything, because the only existing test's ranking
+    # differed in length as well as membership. This one has the same cardinality as the
+    # expected set and the wrong members.
+    raw = _raw(strength_ranking=[1])
+
+    result = validate_response(raw, member_count=2, scored_indices=[0])
+
+    assert result.strength_ranking == []

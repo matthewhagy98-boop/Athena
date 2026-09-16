@@ -1086,10 +1086,21 @@ Post-conditions enforced in `synthesis/validation.py`, in order: filter citation
 | LLM returns `None` (API error/timeout) | `call_forced_tool` returns `None` (`evidence_engine/llm/client.py:22`) | "Synthesis is temporarily unavailable. The comparison below is unaffected." | 3 attempts, exponential backoff, per `digest/compose.py:57` idiom | `status='failed'`, `failure_reason='llm_unavailable'`, `cooldown_until = now + 5 min` | `synthesis_generations.outcome='failed'`; WARN log with member count and latency |
 | Repeat request inside cooldown | `cooldown_until > now` on the cached failed row | Same unavailable message | None — no LLM call | No new row | DEBUG log `synthesis.cooldown_hit` |
 | Citation density below 0.6 | `validation.check_density` | Same unavailable message | 1 additional generation attempt, then fail | `failure_reason='citation_density'` | WARN log with the observed density |
-| All claims dropped after index filtering | Empty claim list post-validation | Same unavailable message | No retry | `failure_reason='no_valid_claims'` | WARN log with the raw index array |
+| All claims dropped after index filtering | Empty claim list post-validation | Same unavailable message | No retry | `failure_reason='citation_density'` — see note below | WARN log with the raw index array |
 | Model returns out-of-range indices | Bounds check (FR-B-003) | None — silently corrected | None | Row stores only valid indices | INFO log `synthesis.indices_filtered` with counts |
 | Rate limit exceeded | `synthesis_rate_windows.request_count > limit` | "You've generated many summaries recently. Try again in M minutes." | Client does not auto-retry | Counter row only | INFO log `synthesis.rate_limited` |
 | Member paper deleted between compare and synthesis | Member load returns fewer rows than requested | "Synthesis covers the N papers that could be loaded." | None | Synthesis generated over surviving members | INFO log with missing IDs |
+
+> **Correction, 2026-09-16.** This table originally gave `no_valid_claims` for the
+> all-claims-dropped row, which contradicts §14.3's post-condition ordering and the
+> shipped behaviour. A response whose claims are all dropped for lacking resolvable
+> citations is a *grounding* failure — density 0-of-N — not a structural one.
+> `no_valid_claims` is reserved for a response that was malformed before grounding was
+> ever assessed: a missing or non-string narrative, a missing or non-list `claims`, or a
+> `claims` list in which no entry is a well-formed object with text. The distinction is
+> the one an operator acts on: the first means the model is producing ungrounded prose,
+> the second means it is not honouring the tool schema. The table is corrected rather
+> than the code.
 | Stale fingerprint + regeneration fails | Fingerprint mismatch, then LLM failure | "Evidence has changed since this summary was written." | Inherits the LLM retry policy | Old row returned with `is_stale=true`; not superseded | WARN log `synthesis.stale_served` |
 | Concurrent identical generation | Unique-index violation on insert | None — invisible | Loser re-selects the winner's row | One row, not two | DEBUG log `synthesis.race_collapsed` |
 | Database unavailable | SQLAlchemy raises; `get_db` rolls back (`webapp/api.py:29`) | Generic frontend error boundary | TanStack Query does not retry (`retry: false`) | Transaction rolled back | ERROR log with stack trace |
