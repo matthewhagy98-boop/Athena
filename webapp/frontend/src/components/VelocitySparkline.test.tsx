@@ -37,4 +37,8 @@ test("the sparkline fits inside the badge's reserved height", () => {
   expect(wrapper).toHaveClass("align-text-bottom");
   expect(wrapper).not.toHaveClass("h-5");
   expect(wrapper).not.toHaveClass("align-middle");
+  // Width is part of the same constraint: this sits inline between the figure and the
+  // percentile clause, so widening it pushes that clause toward a second line on a narrow
+  // card -- the same shift by a different route.
+  expect(wrapper).toHaveClass("w-16");
 });

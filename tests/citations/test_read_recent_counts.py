@@ -229,3 +229,26 @@ def test_the_series_truncates_at_the_most_recent_merge_not_the_first(db_session)
 
     assert counts == [8, 9]
     assert 55 not in counts, "truncated at the first merge instead of the most recent"
+
+
+def test_the_window_is_ranked_per_paper_not_globally(db_session):
+    """PARTITION BY paper_id, verified at a scale where its absence would show.
+
+    test_series_are_not_cross_contaminated_between_papers uses 2 papers x 3 rows = 6,
+    which is under RECENT_COUNTS_LIMIT, so an unpartitioned row_number() still keeps every
+    row and the Python grouping buckets them correctly by coincidence. The partition only
+    matters once the COMBINED row count crosses the cap while each paper stays under it --
+    then a global ranking silently truncates whichever papers sort oldest.
+    """
+    papers = [_paper(db_session, f"Partitioned {i}") for i in range(3)]
+    for index, paper in enumerate(papers):
+        _snaps(db_session, paper.id, [10 * index + n for n in range(5)])  # 3 x 5 = 15 > 12
+        _ready_cache(db_session, paper.id)
+
+    blocks = get_paper_velocities(db_session, [p.id for p in papers])
+
+    for index, paper in enumerate(papers):
+        counts = blocks[paper.id]["recent_counts"]
+        assert counts == [10 * index + n for n in range(5)], (
+            f"paper {index} lost rows to a global ranking: {counts}"
+        )

@@ -1808,11 +1808,18 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 >
 > Three consequences of the new placement were found by review and fixed rather than
 > accepted: the batched series query was bounded in SQL (it was one query but unbounded in
-> rows, which only matters on the hottest read path as history accumulates); anomalous
-> snapshots are excluded, matching `velocity.py`'s existing refusal to compute across a
-> provider record merge; and the sparkline was resized to sit inside the badge's reserved
+> rows, which only matters on the hottest read path as history accumulates); the series is
+> truncated at the most recent provider record merge, inclusive; and the sparkline was
+> resized to sit inside the badge's reserved
 > line box, since a 20px inline-block on `align-middle` stretched it and reintroduced the
 > layout shift this plan forbids.
+>
+> On that middle point: the first attempt merely *excluded* anomalous rows, and this
+> amendment originally said so. That was wrong. `is_anomalous` marks where a merge was
+> detected, and `velocity.py:52-55` treats that count as a valid new baseline, so
+> everything before it belongs to a different record. Dropping just the flagged row left
+> the discontinuity intact and the sparkline still drew the cliff. Truncating at the merge
+> is what shipped.
 
 **Placeholder scan.** No TBD/TODO markers; every code step carries complete code; every test asserts specific values.
 
