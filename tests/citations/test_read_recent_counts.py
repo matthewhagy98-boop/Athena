@@ -158,14 +158,17 @@ def test_the_series_query_fetches_a_bounded_number_of_rows(db_session):
     assert fetched and fetched[0] >= 1, "snapshot query does not bound rows in SQL"
 
 
-def test_anomalous_snapshots_are_excluded_from_the_series(db_session):
-    """An anomalous row marks a provider record merge.
+def test_the_series_is_truncated_at_a_provider_record_merge(db_session):
+    """An anomalous row marks where a provider record merge was detected.
 
-    velocity.py refuses to compute a velocity across one, because the drop is an artifact
-    rather than real citation history. Plotting it here would draw a cliff beside a figure
-    engineered to exclude that very cliff -- two artifacts from the same table, in the
-    same badge, disagreeing. The sparkline cannot mark a point as suspect the way the full
-    history chart does, so the only honest option is to leave it out.
+    velocity.py treats that post-merge count as a valid new baseline, which means every
+    count before it belongs to a different record and is not comparable with what follows.
+
+    Filtering the flagged row OUT is not enough, and was the first attempt at this fix:
+    it removes the marker and leaves the discontinuity, so the series still plunges
+    (100, 104, 109, 15, 19) and the sparkline still draws a cliff that is a bookkeeping
+    artifact rather than citation history -- beside a figure engineered to exclude that
+    very cliff. The series must start at the merge.
     """
     paper = _paper(db_session, "Merged records")
     _snaps(db_session, paper.id, [100, 104, 109])          # days 0, 7, 14
@@ -175,8 +178,9 @@ def test_anomalous_snapshots_are_excluded_from_the_series(db_session):
 
     counts = get_paper_velocities(db_session, [paper.id])[paper.id]["recent_counts"]
 
-    assert 12 not in counts
-    assert counts == [100, 104, 109, 15, 19]
+    # Starts AT the anomalous observation: it is the first count on the new baseline.
+    assert counts == [12, 15, 19]
+    assert 109 not in counts, "pre-merge counts belong to a different record"
 
 
 def test_an_empty_block_still_carries_the_history_that_exists(db_session):
@@ -194,3 +198,34 @@ def test_an_empty_block_still_carries_the_history_that_exists(db_session):
 
     assert block["status"] == "insufficient_history"
     assert block["recent_counts"] == [7, 8, 9]
+
+
+def test_a_paper_with_no_merge_keeps_its_whole_history(db_session):
+    """The truncation is an outer join, so a clean paper must be unaffected by it."""
+    paper = _paper(db_session, "Never merged")
+    _snaps(db_session, paper.id, [10, 11, 12, 13])
+    _ready_cache(db_session, paper.id)
+
+    counts = get_paper_velocities(db_session, [paper.id])[paper.id]["recent_counts"]
+
+    assert counts == [10, 11, 12, 13]
+
+
+def test_the_series_truncates_at_the_most_recent_merge_not_the_first(db_session):
+    """Two merges: only history since the latest one shares a baseline.
+
+    Truncating at the earliest anomaly would splice two incompatible records together
+    again, which is the defect this rule exists to prevent.
+    """
+    paper = _paper(db_session, "Merged twice")
+    _snaps(db_session, paper.id, [500, 510])                       # days 0, 7
+    _snaps(db_session, paper.id, [50], start_day=14, anomalous=True)
+    _snaps(db_session, paper.id, [55], start_day=21)
+    _snaps(db_session, paper.id, [8], start_day=28, anomalous=True)
+    _snaps(db_session, paper.id, [9], start_day=35)
+    _ready_cache(db_session, paper.id)
+
+    counts = get_paper_velocities(db_session, [paper.id])[paper.id]["recent_counts"]
+
+    assert counts == [8, 9]
+    assert 55 not in counts, "truncated at the first merge instead of the most recent"

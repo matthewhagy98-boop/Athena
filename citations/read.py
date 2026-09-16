@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from citations.models import CitationSnapshot, CitationVelocityCache
@@ -66,18 +66,38 @@ def _recent_counts_by_paper(session: Session, paper_ids: list[uuid.UUID]) -> dic
     row_number() window keeps it to RECENT_COUNTS_LIMIT per paper no matter how long
     collection has been running.
 
-    Anomalous snapshots are excluded. An anomalous row marks a provider record merge,
-    and velocity.py deliberately refuses to compute across one because the drop is an
-    artifact rather than real citation history (citations/velocity.py:52-65). Plotting
-    them here would put a cliff in the sparkline beside a figure engineered to exclude
-    it -- two artifacts from the same table, in the same badge, disagreeing. The
-    sparkline has no affordance to mark a point as suspect the way get_citation_history
-    does, so excluding is the only honest option.
+    The series is TRUNCATED at the most recent anomalous snapshot, inclusive, rather than
+    having anomalous rows filtered out of it. An anomalous row marks the point where a
+    provider record merge was detected, and velocity.py treats that post-merge count as a
+    valid new baseline (citations/velocity.py:52-55) -- which means every count before it
+    belongs to a different record and is not comparable with what follows.
+
+    Merely dropping the flagged row would remove the marker and leave the discontinuity:
+    a series like [100, 104, 109, 15, 19] still plunges, and the sparkline would draw a
+    cliff that is a bookkeeping artifact rather than citation history -- beside a figure
+    engineered to exclude that very cliff. Truncating yields [15, 19]... starting at the
+    anomalous row itself, since that is the first observation on the new baseline.
+
+    A paper with no anomaly keeps its whole (capped) history, via the outer join.
 
     Ordering is by observed_at within a paper, backed by ix_citation_snapshots_paper_observed.
     Only semantic_scholar writes snapshots today; the unique constraint permits a second
     source per day, which would interleave two series into one line if one is ever added.
     """
+    # Per paper, the newest anomalous observation -- the record merge to truncate at.
+    last_anomaly = (
+        select(
+            CitationSnapshot.paper_id.label("pid"),
+            func.max(CitationSnapshot.observed_at).label("cutoff"),
+        )
+        .where(
+            CitationSnapshot.paper_id.in_(paper_ids),
+            CitationSnapshot.is_anomalous.is_(True),
+        )
+        .group_by(CitationSnapshot.paper_id)
+        .subquery()
+    )
+
     ranked = (
         select(
             CitationSnapshot.paper_id,
@@ -89,9 +109,13 @@ def _recent_counts_by_paper(session: Session, paper_ids: list[uuid.UUID]) -> dic
             )
             .label("rn"),
         )
+        .outerjoin(last_anomaly, last_anomaly.c.pid == CitationSnapshot.paper_id)
         .where(
             CitationSnapshot.paper_id.in_(paper_ids),
-            CitationSnapshot.is_anomalous.is_(False),
+            or_(
+                last_anomaly.c.cutoff.is_(None),
+                CitationSnapshot.observed_at >= last_anomaly.c.cutoff,
+            ),
         )
         .subquery()
     )
