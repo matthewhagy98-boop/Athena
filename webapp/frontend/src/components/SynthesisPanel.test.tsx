@@ -42,7 +42,12 @@ test("renders the narrative and its claims after generating", async () => {
   expect(screen.getByText(/consistent effect/i)).toBeInTheDocument();
 });
 
-test("shows a retraction warning when a member is retracted", async () => {
+// getByText(/retracted/i) alone cannot tell a correct warning from a wrong count, a
+// broken plural, or a warning that renders for every comparison -- nothing asserted its
+// absence, so dropping the length guard would render "includes 0 retracted studies"
+// unchallenged. Retraction is the one thing on this panel a researcher must not miss,
+// and overstating it is as damaging as hiding it.
+test("names how many members are retracted, with the right plural", async () => {
   server.use(
     http.post("/synthesis/papers", () => HttpResponse.json({ ...READY, retracted_member_indices: [1] })),
   );
@@ -50,7 +55,35 @@ test("shows a retraction warning when a member is retracted", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
 
-  await waitFor(() => expect(screen.getByText(/retracted/i)).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText(/includes 1 retracted study\b/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByText(/retracted studies/i)).not.toBeInTheDocument();
+});
+
+test("pluralises the retraction warning for more than one", async () => {
+  server.use(
+    http.post("/synthesis/papers", () =>
+      HttpResponse.json({ ...READY, retracted_member_indices: [0, 1] }),
+    ),
+  );
+  renderPanel();
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() =>
+    expect(screen.getByText(/includes 2 retracted studies/i)).toBeInTheDocument(),
+  );
+});
+
+test("shows no retraction warning when nothing is retracted", async () => {
+  server.use(http.post("/synthesis/papers", () => HttpResponse.json(READY)));
+  renderPanel();
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() => expect(screen.getByText(/both studies point the same way/i)).toBeInTheDocument());
+  expect(screen.queryByText(/retracted/i)).not.toBeInTheDocument();
 });
 
 test("explains a failed synthesis instead of showing nothing", async () => {
