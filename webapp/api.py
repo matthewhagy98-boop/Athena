@@ -269,6 +269,11 @@ def _synthesis_out(row) -> dict:
         "retracted_member_indices": row.retracted_member_indices,
         "failure_reason": row.failure_reason,
         "subject_ids": [str(i) for i in row.subject_ids],
+        # Provenance: spec line 16 requires a visible line naming the model and when the
+        # narrative was generated. A reader deciding how much weight to give AI-written
+        # prose needs to know which model wrote it and how stale it is.
+        "model_id": row.model_id,
+        "generated_at": row.generated_at.isoformat() + "Z" if row.generated_at else None,
     }
 
 

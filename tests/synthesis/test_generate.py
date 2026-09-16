@@ -32,10 +32,14 @@ def test_prompt_forbids_outside_sources():
 
 
 def test_generate_returns_validated_result():
+    # Cites only member 0. MEMBERS[1] is retracted, and spec 14.3 strips any claim citing
+    # a retracted index, so citing [0, 1] here would leave nothing and fail on density --
+    # which is the correct behaviour, covered by
+    # test_a_comparison_carried_by_retracted_work_is_rejected below.
     def fake_call(prompt, tool, max_tokens):
         return {
             "narrative": "They agree.",
-            "claims": [{"text": "Consistent effect.", "citations": [0, 1]}],
+            "claims": [{"text": "Consistent effect.", "citations": [0]}],
             "disagreements": [],
             "strength_ranking": [0, 1],
         }
@@ -146,3 +150,73 @@ def test_generate_passes_the_tool_schema_and_token_cap_to_the_call():
     assert seen["tool"] is SYNTHESIS_TOOL
     assert seen["max_tokens"] == MAX_TOKENS
     assert "First study" in seen["prompt"]
+
+
+def test_generate_strips_claims_citing_a_retracted_member():
+    # MEMBERS[1] is retracted. Spec 14.3 strips claims citing a retracted index before the
+    # density check, so a claim resting on it must not reach the reader -- the panel would
+    # otherwise render it with an ordinary citation chip.
+    def fake_call(prompt, tool, max_tokens):
+        return {
+            "narrative": "Text.",
+            "claims": [
+                {"text": "Grounded in the clean study.", "citations": [0]},
+                {"text": "Grounded in the retracted one.", "citations": [1]},
+                {"text": "Also clean.", "citations": [0]},
+            ],
+            "disagreements": [],
+            "strength_ranking": [],
+        }
+
+    result, _ = generate_synthesis(MEMBERS, call=fake_call)
+
+    assert result.ok is True
+    assert [c["text"] for c in result.claims] == [
+        "Grounded in the clean study.",
+        "Also clean.",
+    ]
+
+
+def test_generate_excludes_an_unscored_member_from_strength_ranking():
+    # MemberInput.tier is None when the paper has no usable Score. FR-B-004 excludes such a
+    # member from strength_ranking, so a ranking naming it is not a permutation of the
+    # scored members and is dropped entirely rather than presented as partial.
+    unscored = MemberInput("Unscored", None, None, "Abstract.", False)
+    members = [MEMBERS[0], unscored]
+
+    def fake_call(prompt, tool, max_tokens):
+        return {
+            "narrative": "Text.",
+            "claims": [{"text": "Claim.", "citations": [0]}],
+            "disagreements": [],
+            "strength_ranking": [0, 1],
+        }
+
+    result, _ = generate_synthesis(members, call=fake_call)
+
+    assert result.ok is True
+    assert result.strength_ranking == []
+
+
+def test_a_comparison_carried_by_retracted_work_is_rejected():
+    # The consequence of the strip rule, stated deliberately rather than discovered later:
+    # if the only claims a comparison supports lean on a retracted study, no synthesis is
+    # produced at all. That is the intended outcome. A narrative that can only be made by
+    # citing retracted work is precisely what this feature must not hand a researcher, and
+    # failing closed is better than quietly returning a thinner set of claims.
+    def fake_call(prompt, tool, max_tokens):
+        return {
+            "narrative": "Rests on the retracted study.",
+            "claims": [
+                {"text": "From the retraction.", "citations": [1]},
+                {"text": "Also from the retraction.", "citations": [0, 1]},
+            ],
+            "disagreements": [],
+            "strength_ranking": [],
+        }
+
+    result, _ = generate_synthesis(MEMBERS, call=fake_call)
+
+    assert result.ok is False
+    assert result.failure_reason == "citation_density"
+    assert result.narrative is None

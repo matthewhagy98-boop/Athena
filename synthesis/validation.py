@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 # At least 60% of surviving claims must carry a resolvable citation, or the whole
@@ -29,8 +30,23 @@ def _valid_indices(values, member_count: int) -> list[int]:
     ]
 
 
-def validate_response(raw: dict | None, member_count: int) -> ValidationResult:
-    """Structural + grounding validation. Nothing is stored or shown unless this returns ok."""
+def validate_response(
+    raw: dict | None,
+    member_count: int,
+    *,
+    retracted_indices: "Iterable[int]" = (),
+    scored_indices: "Iterable[int] | None" = None,
+) -> ValidationResult:
+    """Structural + grounding validation. Nothing is stored or shown unless this returns ok.
+
+    Implements spec 14.3's post-conditions in order: filter citation indices to range,
+    drop claims left with zero citations, strip claims citing a retracted index, density
+    check, verify strength_ranking is a permutation of the scored member indices, verify
+    each disagreement names exactly two in-range distinct members.
+
+    `scored_indices` defaults to None meaning "every member is scored"; FR-B-004 requires
+    a member with no Score row to be excluded from strength_ranking.
+    """
     if raw is None:
         return ValidationResult(ok=False, failure_reason="llm_unavailable")
 
@@ -54,9 +70,32 @@ def validate_response(raw: dict | None, member_count: int) -> ValidationResult:
     if not claims:
         return ValidationResult(ok=False, failure_reason="no_valid_claims")
 
-    cited = sum(1 for c in claims if c["citations"])
-    if cited / len(claims) < MIN_CITATION_DENSITY:
+    # The denominator is every well-formed claim the model produced. What follows drops
+    # claims from the OUTPUT, so computing density afterwards would make it trivially 1.0
+    # -- density measures how much of what the model asserted survived grounding.
+    claimed = len(claims)
+
+    # Post-condition: drop claims left with zero citations. Previously these were kept and
+    # merely counted as uncited, so the panel rendered them with no citation bracket --
+    # an ungrounded assertion presented alongside grounded ones, which is the single thing
+    # this module exists to prevent.
+    grounded = [c for c in claims if c["citations"]]
+
+    # Post-condition: strip claims citing a retracted index. Read literally, per spec: any
+    # citation to retracted work disqualifies the claim, not only claims resting entirely
+    # on it. A claim part-grounded in a retraction is still telling a researcher that
+    # retracted work supports it.
+    retracted = {i for i in retracted_indices}
+    surviving = [c for c in grounded if not any(i in retracted for i in c["citations"])]
+
+    # No early return when `surviving` is empty: that is a density of 0.0, which is a
+    # grounding failure, not a structural one. Reporting no_valid_claims there would say
+    # the model returned nothing usable when in fact it returned claims and none of them
+    # were grounded -- a different diagnosis, and the one an operator would act on.
+    if len(surviving) / claimed < MIN_CITATION_DENSITY:
         return ValidationResult(ok=False, failure_reason="citation_density")
+
+    claims = surviving
 
     disagreements = []
     for entry in raw.get("disagreements") or []:
@@ -65,7 +104,14 @@ def validate_response(raw: dict | None, member_count: int) -> ValidationResult:
         indices = _valid_indices(entry.get("indices"), member_count)
         description = entry.get("description")
         # A disagreement names exactly two members; anything else is unusable.
-        if len(indices) != 2 or not isinstance(description, str) or not description.strip():
+        # Distinct, per spec: a study cannot disagree with itself, and [1, 1] would
+        # render as a conflict between one card and the same card.
+        if (
+            len(indices) != 2
+            or indices[0] == indices[1]
+            or not isinstance(description, str)
+            or not description.strip()
+        ):
             continue
         disagreements.append({"indices": indices, "description": description.strip()})
 
@@ -75,6 +121,15 @@ def validate_response(raw: dict | None, member_count: int) -> ValidationResult:
         if idx not in seen:
             seen.add(idx)
             strength_ranking.append(idx)
+
+    # Post-condition: strength_ranking must be a permutation of the scored members, and is
+    # dropped to [] rather than failing the whole synthesis. A partial ranking would be
+    # read as "these are the strongest" when it is really "these are the ones the model
+    # happened to list", and FR-B-004 excludes unscored members outright -- ranking a
+    # paper by methodological strength requires knowing its study type.
+    expected = set(range(member_count)) if scored_indices is None else set(scored_indices)
+    if set(strength_ranking) != expected:
+        strength_ranking = []
 
     return ValidationResult(
         ok=True,

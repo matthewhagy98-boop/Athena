@@ -559,3 +559,37 @@ def test_synthesis_endpoint_survives_a_stale_user_id(db_session, monkeypatch):
     gen = db_session.execute(select(SynthesisGeneration)).scalars().one()
     assert gen.user_id is None
     assert gen.outcome == "ready"
+
+
+def test_synthesis_response_carries_provenance(db_session, monkeypatch):
+    # The panel must be able to say which model wrote the narrative and when. Without
+    # these two fields the provenance line the spec requires is not merely missing from
+    # the UI -- it is impossible to build from the API contract.
+    from datetime import datetime
+
+    from synthesis.models import ComparisonSynthesis
+
+    monkeypatch.setattr(
+        "webapp.api.get_or_create_synthesis",
+        lambda *a, **k: ComparisonSynthesis(
+            cache_key="p" * 64,
+            subject_type="paper",
+            subject_ids=[],
+            inputs_fingerprint="f" * 64,
+            status="ready",
+            narrative="A grounded summary.",
+            claims=[],
+            disagreements=[],
+            strength_ranking=[],
+            retracted_member_indices=[],
+            model_id="claude-sonnet-4-6",
+            prompt_version="v1",
+            generated_at=datetime(2026, 9, 15, 12, 0, 0),
+        ),
+    )
+    client = _client(db_session)
+
+    body = client.post("/synthesis/papers", json={"paper_ids": [str(uuid.uuid4())]}).json()
+
+    assert body["model_id"] == "claude-sonnet-4-6"
+    assert body["generated_at"] == "2026-09-15T12:00:00Z"
