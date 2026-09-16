@@ -26,10 +26,78 @@ function renderPanel() {
   return render(<SynthesisPanel paperIds={["p1", "p2"]} />, { wrapper });
 }
 
-test("does not generate until the user asks", () => {
+test("does not generate until the user asks", async () => {
+  // Asserting synchronously after render proves nothing: an auto-firing useEffect would
+  // not have resolved its round-trip by the time these run, so the narrative would still
+  // be absent and the test would pass. The constraint here is that visiting Compare never
+  // silently spends money on a model call, so the request itself is what must be counted.
+  let requests = 0;
+  server.use(
+    http.post("/synthesis/papers", () => {
+      requests += 1;
+      return HttpResponse.json(READY);
+    }),
+  );
+
   renderPanel();
+
   expect(screen.getByRole("button", { name: /generate synthesis/i })).toBeInTheDocument();
   expect(screen.queryByText(/both studies point/i)).not.toBeInTheDocument();
+
+  // Give an auto-fired mutation time to land before concluding none was made.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(requests).toBe(0);
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+  await waitFor(() => expect(screen.getByText(/both studies point the same way/i)).toBeInTheDocument());
+  expect(requests).toBe(1);
+});
+
+test("renders every claim, not just the first", async () => {
+  // Every other fixture carries exactly one claim, so .map could be narrowed to
+  // claims[0] undetected. The claims list is the panel's grounding: each one is a
+  // separate assertion the reader is meant to be able to trace to a study.
+  server.use(
+    http.post("/synthesis/papers", () =>
+      HttpResponse.json({
+        ...READY,
+        claims: [
+          { text: "First claim.", citations: [0] },
+          { text: "Second claim.", citations: [1] },
+          { text: "Third claim.", citations: [0, 1] },
+        ],
+      }),
+    ),
+  );
+  renderPanel();
+
+  fireEvent.click(screen.getByRole("button", { name: /generate synthesis/i }));
+
+  await waitFor(() => expect(screen.getByText(/first claim/i)).toBeInTheDocument());
+  expect(screen.getByText(/second claim/i)).toBeInTheDocument();
+  expect(screen.getByText(/third claim/i)).toBeInTheDocument();
+});
+
+test("the trigger is disabled while a generation is in flight", async () => {
+  // Generation costs money per call, so the disabled state is a spend guard, not polish.
+  let requests = 0;
+  server.use(
+    http.post("/synthesis/papers", async () => {
+      requests += 1;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return HttpResponse.json(READY);
+    }),
+  );
+  renderPanel();
+
+  const button = screen.getByRole("button", { name: /generate synthesis/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(screen.getByRole("button", { name: /generating/i })).toBeDisabled());
+  fireEvent.click(screen.getByRole("button", { name: /generating/i }));
+
+  await waitFor(() => expect(screen.getByText(/both studies point the same way/i)).toBeInTheDocument());
+  expect(requests).toBe(1);
 });
 
 test("renders the narrative and its claims after generating", async () => {
