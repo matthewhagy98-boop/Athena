@@ -2920,22 +2920,409 @@ export function StalenessBanner({ computedAt }: { computedAt: string | null }) {
 }
 ```
 
-- [ ] **Step 8: Write the remaining widgets and the page**
+- [ ] **Step 8: Write `src/components/ChangeFeedWidget.tsx`**
 
-`ChangeFeedWidget.tsx` renders `data.days` as dated groups, each event linking to `/topics/{topic.id}` (FR-C-012 — papers have no detail route in sub-project A), with retractions and contradictions carrying `text-error` treatment so they are not buried under `new_paper` volume. `PersonalTopicsWidget.tsx` renders `data.blurb` above the per-topic rows and shows "No change this week" for a zero count. `DashboardPage.tsx` composes `StalenessBanner`, `ActivityWidget`, `ChangeFeedWidget`, and — only when `has_profile` is true — `PersonalTopicsWidget`.
+```tsx
+import { Link } from "react-router-dom";
+import type { ChangeFeedEvent, ChangeFeedResponse } from "../api/types";
 
-Each widget takes `data`/`isLoading`/`isError` props and renders its own error text rather than letting a failure bubble: one widget's endpoint failing must not blank the dashboard.
+// Retractions and contradictions are the highest-signal events and the ones that would
+// otherwise be buried: in a typical window `new_paper` outnumbers the other three types
+// combined. There is deliberately no type filter in v1 (OQ-C-005) -- this visual
+// distinction is what does the work a filter would.
+const WARNING_TYPES = new Set(["paper_retracted", "contradiction_flagged"]);
 
-- [ ] **Step 9: Write `DashboardPage.test.tsx`**
+const LABELS: Record<ChangeFeedEvent["event_type"], string> = {
+  new_paper: "New paper",
+  consensus_updated: "Consensus updated",
+  contradiction_flagged: "Contradiction flagged",
+  paper_retracted: "Retracted",
+};
 
-Cover, at minimum: the cold-start render (all three endpoints empty) shows the activity and change widgets and no personal widget; a user with `has_profile: false` sees no personal widget but no error either; one endpoint returning 500 leaves the other widgets rendered; the staleness banner appears for a `computed_at` older than 36 hours and not for a fresh one. Use MSW handlers for all three endpoints — `onUnhandledRequest` is `"error"`, so every request the page makes needs one.
+function EventRow({ event }: { event: ChangeFeedEvent }) {
+  const isWarning = WARNING_TYPES.has(event.event_type);
+  return (
+    <li className="flex items-baseline gap-2 text-xs">
+      <span
+        className={
+          isWarning
+            ? "shrink-0 rounded border border-error/40 px-1.5 font-semibold text-error"
+            : "shrink-0 rounded bg-surface-container px-1.5 text-on-surface-variant"
+        }
+      >
+        {LABELS[event.event_type]}
+      </span>
+      {/* Links to the TOPIC, not the paper: sub-project A gives papers no detail route,
+          and FR-C-012 requires every row to reach a real destination. */}
+      <Link to={`/topics/${event.topic.id}`} className="text-primary-container hover:underline">
+        {event.topic.canonical_label}
+      </Link>
+      {event.paper && <span className="text-on-surface-variant">{event.paper.title}</span>}
+    </li>
+  );
+}
 
-- [ ] **Step 10: Run the frontend suite and build**
+export function ChangeFeedWidget({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: ChangeFeedResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
+      <h2 className="mb-3 text-sm font-semibold text-on-surface">What changed</h2>
+
+      {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
+      {/* Rendered here rather than thrown: one endpoint failing must not blank the
+          dashboard, so every widget owns its own error surface. */}
+      {isError && (
+        <p className="text-xs text-error">
+          Couldn&apos;t load recent changes. The rest of the dashboard is unaffected.
+        </p>
+      )}
+
+      {data && data.total_events === 0 && !isLoading && (
+        // "No change", never "no results" (FR-C-015).
+        <p className="text-xs text-on-surface-variant">No change recorded in this period.</p>
+      )}
+
+      <div className="space-y-3">
+        {data?.days.map((day) => (
+          <div key={day.date}>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+              {new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                timeZone: "UTC",
+              })}
+            </p>
+            <ul className="space-y-1">
+              {day.events.map((event, index) => (
+                <EventRow key={`${event.detected_at}-${index}`} event={event} />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+```
+
+The date is formatted with `timeZone: "UTC"` deliberately. `day.date` is a calendar date the backend already grouped in UTC; letting the browser reinterpret it in local time would shift the heading by a day for anyone west of UTC, so a viewer in Los Angeles would see events filed under the wrong date.
+
+- [ ] **Step 9: Write `src/components/PersonalTopicsWidget.tsx`**
+
+```tsx
+import { Link } from "react-router-dom";
+import type { PersonalDashboardResponse } from "../api/types";
+
+export function PersonalTopicsWidget({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: PersonalDashboardResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
+      <h2 className="mb-3 text-sm font-semibold text-on-surface">Your topics</h2>
+
+      {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
+      {isError && (
+        <p className="text-xs text-error">
+          Couldn&apos;t load your topics. The rest of the dashboard is unaffected.
+        </p>
+      )}
+
+      {/* Deterministic, not model-written (OQ-C-002). Rendered as plain text with no
+          "AI" framing, because it is not AI -- claiming otherwise in either direction
+          would misrepresent it. */}
+      {data?.blurb && (
+        <p className="mb-3 font-serif text-sm leading-relaxed text-on-surface">{data.blurb}</p>
+      )}
+
+      <ul className="space-y-1">
+        {data?.topics.map((row) => (
+          <li key={row.topic.id} className="flex items-baseline justify-between gap-2 text-xs">
+            <Link
+              to={`/topics/${row.topic.id}`}
+              className="text-primary-container hover:underline"
+            >
+              {row.topic.canonical_label}
+            </Link>
+            <span className="text-on-surface-variant">
+              {/* A quiet topic is listed with a zero count (FR-C-008), not dropped:
+                  dropping it would make the widget look like the user has fewer
+                  interests than they do, and "no change" is itself information. */}
+              {row.event_count === 0
+                ? "No change this week"
+                : `${row.event_count} ${row.event_count === 1 ? "change" : "changes"}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+```
+
+- [ ] **Step 10: Write `src/pages/DashboardPage.tsx`**
+
+```tsx
+import { useActivityRanking, useChangeFeed, usePersonalDashboard } from "../api/hooks";
+import { ActivityWidget } from "../components/ActivityWidget";
+import { ChangeFeedWidget } from "../components/ChangeFeedWidget";
+import { PersonalTopicsWidget } from "../components/PersonalTopicsWidget";
+import { StalenessBanner } from "../components/StalenessBanner";
+import { useIdentity } from "../identity/identity";
+
+export function DashboardPage() {
+  const { userId } = useIdentity();
+  const activity = useActivityRanking();
+  const changes = useChangeFeed();
+  const personal = usePersonalDashboard(userId);
+
+  return (
+    <div>
+      <h1 className="mb-4 text-2xl font-semibold">Dashboard</h1>
+
+      <StalenessBanner computedAt={activity.data?.computed_at ?? null} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ActivityWidget
+          data={activity.data}
+          isLoading={activity.isLoading}
+          isError={activity.isError}
+        />
+        <ChangeFeedWidget
+          data={changes.data}
+          isLoading={changes.isLoading}
+          isError={changes.isError}
+        />
+      </div>
+
+      {/* Mounted only once the user has actually declared interests. Rendering an empty
+          "your topics" panel for every first-time visitor would occupy the primary
+          content area with a placeholder, which G-C-1 exists to prevent. */}
+      {personal.data?.has_profile && (
+        <div className="mt-4">
+          <PersonalTopicsWidget
+            data={personal.data}
+            isLoading={personal.isLoading}
+            isError={personal.isError}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 11: Write `src/pages/DashboardPage.test.tsx`**
+
+```tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
+import { IdentityProvider } from "../identity/identity";
+import { server } from "../test/server";
+import { DashboardPage } from "./DashboardPage";
+
+const EMPTY_ACTIVITY = { computed_at: null, window_start: null, window_end: null, topics: [] };
+const EMPTY_CHANGES = { days: [], total_events: 0 };
+const NO_PROFILE = {
+  has_profile: false,
+  computed_at: null,
+  window_start: null,
+  window_end: null,
+  topics: [],
+  blurb: null,
+};
+
+function handlers({ activity = EMPTY_ACTIVITY, changes = EMPTY_CHANGES, personal = NO_PROFILE } = {}) {
+  // MSW is configured with onUnhandledRequest: "error", so all three endpoints need a
+  // handler even when a test only cares about one of them.
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.json(activity)),
+    http.get("/dashboard/changes", () => HttpResponse.json(changes)),
+    http.get("/dashboard/personal", () => HttpResponse.json(personal)),
+  );
+}
+
+function renderPage() {
+  localStorage.setItem("athena_user_id", "00000000-0000-0000-0000-000000000001");
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <IdentityProvider>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </IdentityProvider>
+    </QueryClientProvider>,
+  );
+}
+
+test("cold start renders both global widgets rather than a placeholder", async () => {
+  // G-C-1: a first-time visitor with no interests and no data must still get a populated
+  // dashboard, not an empty-state panel occupying the primary content area.
+  handlers();
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.getByText(/what changed/i)).toBeInTheDocument();
+});
+
+test("a user without a profile sees no personal widget and no error", async () => {
+  handlers();
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.queryByText(/your topics/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
+});
+
+test("a user with a profile sees the personal widget and its blurb", async () => {
+  handlers({
+    personal: {
+      ...NO_PROFILE,
+      has_profile: true,
+      blurb: "10 new papers and 2 consensus updates across your 3 topics this week.",
+      topics: [
+        {
+          topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+          event_count: 0,
+          breakdown: { new_paper: 0, consensus_updated: 0, contradiction_flagged: 0, paper_retracted: 0 },
+          latest_event_at: null,
+        },
+      ],
+    },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/your topics/i)).toBeInTheDocument());
+  expect(screen.getByText(/10 new papers and 2 consensus updates/i)).toBeInTheDocument();
+  // FR-C-008: a quiet interest topic is listed with a zero count, not dropped.
+  expect(screen.getByText(/no change this week/i)).toBeInTheDocument();
+});
+
+test("one failing endpoint does not blank the other widgets", async () => {
+  // The load-bearing property of this page. Three independent queries feed it, and a
+  // single 500 must degrade one panel rather than the whole landing surface.
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.text("boom", { status: 500 })),
+    http.get("/dashboard/changes", () =>
+      HttpResponse.json({
+        days: [
+          {
+            date: "2026-08-01",
+            events: [
+              {
+                event_type: "paper_retracted",
+                detected_at: "2026-08-01T06:12:44Z",
+                topic: { id: "t9", canonical_label: "GLP-1 receptor agonists" },
+                paper: { id: "p9", title: "Weight outcomes in a retrospective cohort" },
+                evidence_tier: null,
+              },
+            ],
+          },
+        ],
+        total_events: 1,
+      }),
+    ),
+    http.get("/dashboard/personal", () => HttpResponse.json(NO_PROFILE)),
+  );
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't load topic activity/i)).toBeInTheDocument(),
+  );
+  expect(screen.getByText(/glp-1 receptor agonists/i)).toBeInTheDocument();
+});
+
+test("a retraction is visually distinguished from ordinary activity", async () => {
+  // OQ-C-005 chose no type filter for v1 on the grounds that this treatment does the
+  // work a filter would. If it stops happening, that decision is silently undone.
+  handlers({
+    changes: {
+      days: [
+        {
+          date: "2026-08-01",
+          events: [
+            {
+              event_type: "paper_retracted",
+              detected_at: "2026-08-01T06:12:44Z",
+              topic: { id: "t9", canonical_label: "GLP-1 receptor agonists" },
+              paper: { id: "p9", title: "Weight outcomes" },
+              evidence_tier: null,
+            },
+            {
+              event_type: "new_paper",
+              detected_at: "2026-08-01T06:12:03Z",
+              topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+              paper: { id: "p1", title: "Anticoagulation in adults over 85" },
+              evidence_tier: "established",
+            },
+          ],
+        },
+      ],
+      total_events: 2,
+    },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText("Retracted")).toBeInTheDocument());
+  expect(screen.getByText("Retracted").className).toContain("text-error");
+  expect(screen.getByText("New paper").className).not.toContain("text-error");
+});
+
+test("the staleness banner appears when the data is older than 36 hours", async () => {
+  // FR-C-011. The job runs daily, so 36 hours means a run was missed; saying so is the
+  // difference between a user distrusting the numbers and distrusting the app.
+  const twoDaysAgo = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  handlers({ activity: { ...EMPTY_ACTIVITY, computed_at: twoDaysAgo } });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/data as of/i));
+});
+
+test("no staleness banner for fresh data", async () => {
+  handlers({ activity: { ...EMPTY_ACTIVITY, computed_at: new Date().toISOString() } });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+const FORBIDDEN = /trending|hot|popular|breakthrough|important|momentum|real-time|\blive\b|no results|nothing found/i;
+
+test("the assembled page never uses forbidden copy", async () => {
+  // Asserted on the whole page, not per component: the copy rules bind the surface a
+  // reader actually sees, and a widget could satisfy them alone while the composition
+  // does not.
+  handlers({
+    personal: { ...NO_PROFILE, has_profile: true, blurb: "No change in your 1 topic this week." },
+  });
+  const { container } = renderPage();
+
+  await waitFor(() => expect(screen.getByText(/your topics/i)).toBeInTheDocument());
+  expect(container.textContent).not.toMatch(FORBIDDEN);
+});
+```
+
+- [ ] **Step 12: Run the frontend suite and build**
 
 Run: `npx vitest run && npm run build`
 Expected: all pass, build clean.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 git add webapp/frontend/src
@@ -3022,6 +3409,8 @@ git commit -m "feat: make the dashboard the landing route"
 
 **Known gap to watch during execution.** `refresh_activity_snapshots` computes nine windows with one grouped query each, which is fine at current corpus size but is O(windows) full-range scans over `change_events`. The `ix_change_events_detected_at` index added in Task 1 is what keeps that bounded; if the job gets slow, that index is the first thing to check, not the query count.
 
-**Placeholder scan.** No TBD/TODO markers. Tasks 1–7 carry complete code for every code step. Task 8 Steps 8 and 9 describe two widgets and a page test in prose rather than full code — deliberately, because they are compositions of components fully specified earlier in the same task and their exact markup should follow the conventions of the existing pages the implementer is told to read first. Every behavioural requirement they must satisfy is stated.
+**Placeholder scan.** No TBD/TODO markers. Every task carries complete code for every code step.
+
+Task 8's Steps 8 and 9 originally described two widgets and a page test in prose, justified as "compositions of components fully specified earlier". Pre-flight review rejected that: the writing-plans rubric calls a step that describes what to do without showing how a plan failure, and the justification did not make it compliant — it meant an implementer opening Task 8 got materially less than Tasks 1–7 give, while being reviewed to the same bar. Expanded 2026-09-17 into Steps 8–11 with full code for `ChangeFeedWidget`, `PersonalTopicsWidget`, `DashboardPage` and `DashboardPage.test.tsx`.
 
 **Type consistency.** `TopicCounts` and `ScoredTopic` field names match between Task 3's definition and Task 4's construction. `Window.start`/`.end` match between Tasks 2 and 4. `read_current_activity`, `read_change_feed`, `personal_topic_summary`, `render_blurb`, `add_user_interest`, `remove_user_interest` and `RateLimitExceeded` are called in Task 7 with exactly the signatures Tasks 4–6 define. The TypeScript interfaces in Task 8 mirror the JSON shapes Task 7 returns field for field, including the `blurb` key the endpoint adds to the personal summary.
