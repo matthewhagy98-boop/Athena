@@ -1863,12 +1863,34 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 > `truncate`'s `overflow: hidden` now absorbs it. `h-4` is kept as defence in depth and
 > stays pinned by the unit test.
 >
-> **Found, not fixed:** the search page overflows horizontally below ~768px
-> (`scrollWidth` 696px at a 375px viewport), which squeezes the result card's `min-w-0`
-> column toward zero width. It is present with no velocity served at all, so it predates
-> this work and is out of scope here, but it is why the badge text is clipped rather
-> than merely truncated on a phone. The layout-shift test gates on text content rather
-> than visibility for that reason.
+> **Also found: the search page scrolled sideways below 768px** (`scrollWidth` 696px in
+> a 375px viewport), squeezing the result card's `min-w-0` column to literally zero.
+> It reproduced with no velocity served at all, so it predated this work; it was first
+> recorded here as out of scope, then fixed on user instruction. Three causes, found by
+> measuring the box tree rather than reading the markup:
+>
+> 1. `SearchPage`'s two-column flex never stacked. `FilterSidebar` is `w-52 shrink-0`
+>    (208px), so with the shell's padding it left the results column 47px of a 375px
+>    screen against ~123px of min-content. Now `flex-col md:flex-row`. This was the
+>    load-bearing cause.
+> 2. The shell's `px-12` spent 96px -- a quarter of a phone screen -- on padding before
+>    any content. Now `px-4 md:px-12`, which takes the card's text column from ~219px
+>    to 281px.
+> 3. `FilterSidebar` kept its 208px column width and right-hand divider when stacked.
+>    Now `w-full md:w-52` with the divider moving to the bottom edge below `md`.
+>
+> A fourth cause was transient and would have been missed by any steady-state check:
+> until the Material Symbols font loads, each icon renders its ligature NAME as literal
+> text ("bookmark_add"), several times wider than the glyph, which pushed the mobile
+> bottom bar 57px past the viewport for the first ~300ms. `font-display: block` does not
+> help -- the invisible fallback still occupies the fallback's width -- so the icon box
+> is pinned to `width: 1em` with `overflow: hidden`, which holds even if the font never
+> loads. `e2e/responsive-layout.spec.ts` blocks the webfonts outright rather than racing
+> a timer, so the worst case is the case under test.
+>
+> All four are mutation-verified, and a desktop test pins the `md` breakpoint from the
+> other side: reverting either the padding or the sidebar width above `md` fails, so the
+> desktop design cannot drift while the mobile one is being fixed.
 
 **Placeholder scan.** No TBD/TODO markers; every code step carries complete code; every test asserts specific values.
 

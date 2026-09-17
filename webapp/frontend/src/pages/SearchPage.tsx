@@ -74,7 +74,10 @@ export function SearchPage() {
   }, [data]);
 
   return (
-    <div className="flex gap-6">
+    // Stacked below `md`: as a row, the 208px fixed-width sidebar plus its gap left
+    // the results column 47px of a 375px screen, so every card overflowed the
+    // viewport instead of fitting in it.
+    <div className="flex flex-col gap-6 md:flex-row">
       <FilterSidebar topics={topics ?? []} value={params} onApply={(p) => applyParams({ ...p, q: params.q })} />
       <div className="min-w-0 flex-1 pb-20">
         <form

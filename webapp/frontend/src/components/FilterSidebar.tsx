@@ -34,7 +34,10 @@ export function FilterSidebar({
   }
 
   return (
-    <aside className="w-52 shrink-0 border-r border-hairline bg-surface-container-lowest p-4">
+    // w-52 is a column width, and it only makes sense beside the results. Stacked
+    // above them below `md` it becomes full width, and the divider moves to the
+    // edge the two panels actually meet on.
+    <aside className="w-full shrink-0 border-b border-hairline bg-surface-container-lowest p-4 md:w-52 md:border-b-0 md:border-r">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Filters</p>
 
       <label className="mb-1 block text-xs font-medium text-on-surface-variant" htmlFor="filter-topic">Topic</label>

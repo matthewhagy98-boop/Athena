@@ -35,4 +35,17 @@ body {
 
 .material-symbols-outlined {
   font-variation-settings: "wght" 300;
+
+  /* Until the icon font arrives, the ligature NAME renders as literal text --
+     "bookmark_add", "compare_arrows" -- in the fallback face, several times wider
+     than the glyph it becomes. On the mobile bottom bar that briefly pushed the
+     page 57px past the viewport, so the whole layout scrolled sideways until the
+     font loaded. Note that `font-display: block` does not fix this: the invisible
+     fallback still occupies the fallback's width. Pinning the box to the glyph's
+     own advance (1em, the Material Symbols design grid) and clipping does, and it
+     holds even if the font never loads at all. */
+  display: inline-block;
+  width: 1em;
+  overflow: hidden;
+  white-space: nowrap;
 }

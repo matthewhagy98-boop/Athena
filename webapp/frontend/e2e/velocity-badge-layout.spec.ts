@@ -51,13 +51,8 @@ async function measureBadgeRegions(page: Page, withVelocity: boolean): Promise<n
   await expect(page.getByText("Established evidence")).toBeVisible();
 
   const regions = page.locator("[data-testid='citation-velocity-region']");
-  await expect(regions.first()).toBeAttached();
+  await expect(regions.first()).toBeVisible();
   if (withVelocity) {
-    // Gate on text content, not visibility: the search page overflows horizontally
-    // below ~768px (a pre-existing bug unrelated to velocity -- the page scrolls to
-    // 696px wide even when no velocity is served), which squeezes the card's column
-    // to zero width and makes the clipped badge text technically invisible. The
-    // height invariant still has to hold there, so this must not gate on visibility.
     await expect(regions.first()).toContainText("citations in the last 30 days");
   }
   return regions.evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().height));

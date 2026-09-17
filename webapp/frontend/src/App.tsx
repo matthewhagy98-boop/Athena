@@ -16,7 +16,10 @@ export default function App() {
         <HashRouter>
           <div className="flex min-h-screen">
             <IconSidebar />
-            <main className="mx-auto w-full max-w-[1200px] flex-1 px-12 py-8">
+            {/* px-12 is 96px of padding -- a quarter of a 375px phone screen, spent
+                before any content. Below the `md` breakpoint (where IconSidebar
+                becomes a bottom bar) it drops to px-4. */}
+            <main className="mx-auto w-full max-w-[1200px] flex-1 px-4 py-8 md:px-12">
               <Routes>
                 <Route path="/" element={<Navigate to="/search" replace />} />
                 <Route path="/search" element={<SearchPage />} />
