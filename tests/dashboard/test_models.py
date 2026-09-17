@@ -141,14 +141,24 @@ def test_the_change_events_detected_at_index_exists(db_session):
     """
     from sqlalchemy import text
 
-    found = db_session.execute(
+    definition = db_session.execute(
         text(
-            "SELECT indexname FROM pg_indexes "
+            "SELECT indexdef FROM pg_indexes "
             "WHERE tablename = 'change_events' AND indexname = 'ix_change_events_detected_at'"
         )
     ).scalar_one_or_none()
 
-    assert found == "ix_change_events_detected_at", (
+    assert definition is not None, (
         "ix_change_events_detected_at is missing. It is hand-added in the dashboard "
         "migration; regenerating that migration drops it."
+    )
+    # Asserting the indexed COLUMN, parsed out of the definition -- not a substring search
+    # over the whole thing. A substring check passes for an index on the wrong column,
+    # because the index's own NAME contains "detected_at":
+    #   CREATE INDEX ix_change_events_detected_at ON ... USING btree (topic_id)
+    # That was the first attempt at this fix and a mutation caught it. The name is what a
+    # typo preserves; the column is what the dashboard's query performance depends on.
+    columns = definition[definition.rindex("(") + 1 : definition.rindex(")")]
+    assert columns.strip() == "detected_at", (
+        f"ix_change_events_detected_at covers {columns.strip()!r}, not detected_at"
     )
