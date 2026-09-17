@@ -17,8 +17,26 @@ function formatDate(iso: string | null): string {
 
 // A fixed-height wrapper in every branch: the region is reserved from first paint,
 // so a velocity arriving (or never arriving) cannot shift the card around it.
+//
+// `truncate` (nowrap + overflow-hidden + ellipsis) is what actually makes that
+// true, and min-h-5 alone did not. min-h-5 reserves ONE line, but nothing stopped
+// the content from wrapping onto a second: a ready velocity emits the figure, a
+// percentile clause and an "as of N days ago" suffix, and measured in Chromium
+// that wrapped -- and grew the row by 13px -- at every width at or below 900px,
+// which is an ordinary laptop-with-a-sidebar width, not just mobile. The sparkline
+// was a red herring here; the text wrapped on its own (32px of the 33px). Pinning
+// the region to a single line makes the reserved height hold at every width, and
+// the badge is supplementary enough that clipping its tail beats moving the page.
+// e2e/velocity-badge-layout.spec.ts measures this in a real browser; jsdom cannot.
 function Region({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-5 text-xs text-on-surface-variant">{children}</div>;
+  return (
+    <div
+      data-testid="citation-velocity-region"
+      className="min-h-5 truncate text-xs text-on-surface-variant"
+    >
+      {children}
+    </div>
+  );
 }
 
 export function CitationVelocityBadge({

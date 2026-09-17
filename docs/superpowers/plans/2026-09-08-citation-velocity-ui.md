@@ -1821,6 +1821,55 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 > the discontinuity intact and the sparkline still drew the cliff. Truncating at the merge
 > is what shipped.
 
+> **Amendment, 2026-09-16 (second).** The sparkline resize above fixed one cause of
+> layout shift on the badge but not the invariant itself, and a browser measurement
+> found the region still growing. Two changes, both measured in Chromium rather than
+> argued from the markup:
+>
+> **The badge region now truncates to a single line** (`min-h-5 truncate`). `min-h-5`
+> reserved one line but nothing held the content *to* one line: a ready velocity emits
+> the figure, a percentile clause and an "as of N days ago" suffix, and that text
+> wrapped -- growing every affected row by 13px when the velocity arrived -- at every
+> width at or below **900px**, an ordinary laptop-with-a-sidebar width, not just mobile.
+> The suspected culprit, the sparkline's 64px of inline width, turned out to be a red
+> herring at those widths: with the sparkline suppressed the region still measured 32px
+> of the 33px, so the text was wrapping on its own. The sparkline only adds a further
+> line below ~500px. Truncation was chosen over reserving two lines because the badge is
+> supplementary and a second reserved line costs vertical space on all 50 rows.
+> `e2e/velocity-badge-layout.spec.ts` measures the region at 1280/900/768/375px with and
+> without a worst-case velocity; jsdom cannot see any of this.
+>
+> **`VelocitySparkline` no longer uses Recharts.** Deferred twice as orthogonal, then
+> measured on a stubbed 50-row page: the `ResponsiveContainer` expanded to **1250 DOM
+> nodes, 54% of the page's entire element count**, plus a `ResizeObserver` per row, and
+> took 160-243ms to mount. A hand-computed `<polyline>` draws the same picture in 150
+> nodes (2 per sparkline) and mounts in 30-37ms. `CitationHistoryChart` keeps Recharts
+> and should -- that is one large interactive chart, which is what the library is for.
+> Visual treatment is unchanged (teal `#006a61`, `strokeWidth` 1.5, no dots,
+> `aria-hidden`, self-suppression below three points) with one honest difference: the old
+> `type="monotone"` drew a smoothed cubic curve, the polyline draws straight segments.
+> At 64x16px carrying 3-12 points, that is not a perceptible change. The gain beyond
+> cost is testability: the geometry is computed in `sparklinePoints` and renders in
+> jsdom, so the axis direction, ordering, flat-series case and box bounds are now
+> asserted as coordinates instead of as class names.
+>
+> **Mutation results.** Both changes were verified by mutation. Removing `truncate`
+> fails the browser test at 900/768/375px (20px -> 33/33/369px) and, correctly, not at
+> 1280px, where nothing wraps. Eight mutants of the sparkline -- inverted y axis, no
+> flat-series guard, reversed x order, wrong stroke colour, box overflow, filled
+> polyline, loosened suppression threshold and wrong stroke width -- are all killed.
+> One mutant deliberately survives and is not a gap:
+> reverting the sparkline to `h-5`/`align-middle` no longer shifts anything, because
+> `truncate`'s `overflow: hidden` now absorbs it. `h-4` is kept as defence in depth and
+> stays pinned by the unit test.
+>
+> **Found, not fixed:** the search page overflows horizontally below ~768px
+> (`scrollWidth` 696px at a 375px viewport), which squeezes the result card's `min-w-0`
+> column toward zero width. It is present with no velocity served at all, so it predates
+> this work and is out of scope here, but it is why the badge text is clipped rather
+> than merely truncated on a phone. The layout-shift test gates on text content rather
+> than visibility for that reason.
+
 **Placeholder scan.** No TBD/TODO markers; every code step carries complete code; every test asserts specific values.
 
 **Type consistency.** `PaperVelocity` fields match between Task 4's TypeScript and Task 1's Python serialization field-for-field, including `computed_at` being nullable (Task 1 emits `None` for a paper with no cache row — Task 4's type says `string | null`, and Task 5's `daysSince` handles null). `VelocitySparkline`'s `points: number[]` matches its only caller. `saved_search_velocity(session, saved_search, weeks)` is called in Task 3 with exactly that signature.
