@@ -12,6 +12,7 @@ import webapp.models  # noqa: F401 - import to register webapp models with Base.
 import enterprise_api.models  # noqa: F401 - import to register enterprise_api models with Base.metadata
 import citations.models  # noqa: F401 - import to register citation models with Base.metadata
 import synthesis.models  # noqa: F401 - import to register synthesis models with Base.metadata
+import dashboard.models  # noqa: F401 - import to register dashboard models with Base.metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
