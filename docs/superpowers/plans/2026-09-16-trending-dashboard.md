@@ -19,7 +19,8 @@
 - **Dashboard endpoints MUST NOT write to** `change_events`, `topics`, `papers`, `scores`, or `consensus_snapshots` (FR-C-017).
 - **Copy rules (FR-C-015, FR-C-016).** Use "Most active topics", "Changes"/"What changed", "Newly tracked", "No change this week", "Data as of {timestamp}", "volume of newly indexed and changed evidence". NEVER use: "trending", "hot", "popular", "breakthrough", "important", "updates", "new topic", "nothing found", "no results", "live", "real-time", "up to date", "research momentum", "scientific activity".
 - Everything is gated behind `DASHBOARD_ENABLED`, default `false`.
-- Run tests as `arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest` from the repo root; the venv's `pydantic_core` is x86_64-only. A `.env` with `DATABASE_URL` must exist. PostgreSQL runs in docker container `evidence-engine-postgres-1`.
+- **Every `pytest` and `alembic` command on this branch MUST be preceded by `source .superpowers/sdd/c-env.sh`.** Sub-project C runs against an isolated `dashboard_dev` database. Concurrent sessions share one dev database — every worktree's `.env` is a symlink to the main one — and a parallel session applied a migration that does not exist on this branch, which left Alembic unable to autogenerate or upgrade here. Editing `.env` would have repointed that session's database mid-run. A command run without sourcing it will silently hit the shared database and either fail on an unknown revision or corrupt someone else's state.
+- Run tests as `source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest` from the repo root; the venv's `pydantic_core` is x86_64-only. PostgreSQL runs in docker container `evidence-engine-postgres-1`.
 - Frontend: from `webapp/frontend`, `npx vitest run` and `npm run build`. The build is the type check and must be clean.
 
 ## Corrections to the spec — verified against the repo on 2026-09-16

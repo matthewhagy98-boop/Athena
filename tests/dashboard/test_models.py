@@ -124,3 +124,31 @@ def test_one_counter_per_subject_per_window(db_session):
     db_session.add(DashboardRateWindow(subject="user:abc", window_start=start))
     with pytest.raises(IntegrityError):
         db_session.flush()
+
+
+def test_the_change_events_detected_at_index_exists(db_session):
+    """The one index this sub-project adds to an engine-owned table.
+
+    Alembic will not autogenerate it: `change_events` belongs to evidence_engine and
+    `dashboard/models.py` does not declare it, so there is no model diff to detect. It was
+    added to the migration by hand, which means regenerating that migration drops it
+    silently.
+
+    Every window query in this sub-project filters `change_events` by `detected_at`, and
+    the column has no other index. Without this test the failure mode is not a red build
+    -- it is a dashboard that gets slower as the event table grows, discovered in
+    production. Asserting it here makes the hand-edit survive.
+    """
+    from sqlalchemy import text
+
+    found = db_session.execute(
+        text(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE tablename = 'change_events' AND indexname = 'ix_change_events_detected_at'"
+        )
+    ).scalar_one_or_none()
+
+    assert found == "ix_change_events_detected_at", (
+        "ix_change_events_detected_at is missing. It is hand-added in the dashboard "
+        "migration; regenerating that migration drops it."
+    )
