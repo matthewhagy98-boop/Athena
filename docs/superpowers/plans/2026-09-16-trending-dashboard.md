@@ -1100,20 +1100,23 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
     current_counts = _counts_in_window(session, current.start, current.end)
     priors = [_counts_in_window(session, w.start, w.end) for w in baseline_windows(as_of)]
     first_seen = _first_event_at(session)
-    earliest_baseline_start = baseline_windows(as_of)[-1].start
 
     scored = []
     for topic_id, bucket in current_counts.items():
         if not is_eligible(bucket["total"]):
             continue
-        # A topic counts as fully tracked only if its first event predates the earliest
-        # baseline window -- otherwise its silent early weeks are absence of tracking,
-        # not absence of activity, and averaging them in would understate its baseline.
+        # How many complete baseline windows the topic actually existed for. A window
+        # counts only if the topic's first event predates its start -- otherwise the
+        # topic's silence through that window is absence of TRACKING, not absence of
+        # activity, and averaging it in as a zero would understate the baseline and
+        # inflate the ratio against it.
+        #
+        # This reaches 8 exactly when the first event predates the earliest baseline
+        # window, so no separate "fully tracked" branch is needed: `first <=
+        # earliest_baseline_start` implies `first <= w.start` for every window, and the
+        # sum is already 8. An earlier draft had that branch; it was dead logic.
         first = first_seen.get(topic_id)
-        weeks = BASELINE_WINDOWS if first is not None and first <= earliest_baseline_start else 0
-        if weeks == 0:
-            # Count the complete windows the topic actually existed for, for display.
-            weeks = sum(1 for w in baseline_windows(as_of) if first is not None and first <= w.start)
+        weeks = sum(1 for w in baseline_windows(as_of) if first is not None and first <= w.start)
         prior_counts = [p.get(topic_id, {}).get("total", 0) for p in priors]
         scored.append(
             score_topic(
