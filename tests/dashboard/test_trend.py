@@ -105,3 +105,29 @@ def test_breakdown_counts_are_carried_through_untouched():
 
     assert scored.counts.new_paper == 19
     assert scored.counts.paper_retracted == 1
+
+
+def test_baseline_weeks_is_reported_on_a_scored_topic_too():
+    # Only the unscored branch asserted baseline_weeks, so hardcoding it in the scored
+    # return -- to 0, or to BASELINE_WINDOWS, or to anything -- passed the whole file.
+    # Task 4 persists this field and the widget renders it as "weeks tracked".
+    scored = score_topic(_counts(event_count=24), [6, 9, 4, 11, 8, 7, 5, 9], weeks_tracked=8)
+
+    assert scored.baseline_weeks == 8
+
+
+def test_the_result_dataclasses_are_immutable():
+    # frozen=True on both was unenforced by any test. These are passed between the job,
+    # the ranker and the persistence layer; a caller mutating one in place would change
+    # a value another step already read.
+    import dataclasses
+
+    import pytest as _pytest
+
+    counts = _counts(event_count=10)
+    scored = score_topic(counts, [1] * 8, weeks_tracked=8)
+
+    with _pytest.raises(dataclasses.FrozenInstanceError):
+        counts.event_count = 99
+    with _pytest.raises(dataclasses.FrozenInstanceError):
+        scored.trend_score = 99.0
