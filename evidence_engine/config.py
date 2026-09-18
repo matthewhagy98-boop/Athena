@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str
     citation_tracking_enabled: bool = False
     synthesis_enabled: bool = False
+    dashboard_enabled: bool = False
     anthropic_api_key: str
     anthropic_model: str = "claude-sonnet-4-6"
     ncbi_api_key: str | None = None
