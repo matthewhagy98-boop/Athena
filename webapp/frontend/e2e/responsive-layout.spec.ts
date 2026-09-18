@@ -110,6 +110,62 @@ test("the desktop layout is unchanged", async ({ page }) => {
   expect(m.asideBorderBottom).toBe("0px");
 });
 
+/** Opens the search page at `width` with fonts blocked and velocity stubbed out. */
+async function searchPageAt(page: Page, width: number): Promise<void> {
+  await page.setViewportSize({ width, height: 820 });
+  await page.route("**/papers/velocity**", (r) => r.fulfill({ json: { velocities: {} } }));
+  await blockWebfonts(page);
+  await page.goto("/#/search?q=cognitive");
+  await page.reload();
+  await expect(page.getByText("Established evidence")).toBeVisible();
+}
+
+test("the filter panel is collapsed on a phone", async ({ page }) => {
+  await searchPageAt(page, 375);
+
+  await expect(page.getByLabel("Topic")).toBeHidden();
+  await expect(page.getByRole("button", { name: /^filters/i })).toBeVisible();
+});
+
+test("a phone shows a result without scrolling", async ({ page }) => {
+  // The actual point of collapsing: the panel used to fill the first screen and push
+  // every result below the fold.
+  await searchPageAt(page, 375);
+
+  const card = page.getByText(
+    "Cognitive offloading and digital tool interaction: a systematic review",
+    { exact: true },
+  );
+  await expect(card).toBeVisible();
+  const box = await card.boundingBox();
+  expect(box!.y).toBeLessThan(820);
+});
+
+test("tapping the toggle reveals the filters", async ({ page }) => {
+  await searchPageAt(page, 375);
+
+  await page.getByRole("button", { name: /^filters/i }).click();
+
+  await expect(page.getByLabel("Topic")).toBeVisible();
+});
+
+test("applying a filter collapses the panel again", async ({ page }) => {
+  await searchPageAt(page, 375);
+  await page.getByRole("button", { name: /^filters/i }).click();
+  await expect(page.getByLabel("Topic")).toBeVisible();
+
+  await page.getByRole("button", { name: /apply filters/i }).click();
+
+  await expect(page.getByLabel("Topic")).toBeHidden();
+});
+
+test("the desktop panel is always open and has no toggle", async ({ page }) => {
+  await searchPageAt(page, 1280);
+
+  await expect(page.getByLabel("Topic")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^filters/i })).toHaveCount(0);
+});
+
 test("the result card keeps a usable column at 375px", async ({ page }) => {
   // The overflow's visible symptom: the card's text column collapsed to 0px wide,
   // so asserting "no scrollbar" alone is not enough -- the column has to be real.
