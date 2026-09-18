@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from dashboard.models import DashboardJobState, TopicActivitySnapshot
 from dashboard.trend import TopicCounts, is_eligible, rank_topics, score_topic
-from dashboard.windows import BASELINE_WINDOWS, baseline_windows, window_for
+from dashboard.windows import baseline_windows, window_for
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Topic
 
 JOB_NAME = "activity_snapshot"
@@ -85,7 +85,8 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
     session.flush()
 
     current_counts = _counts_in_window(session, current.start, current.end)
-    priors = [_counts_in_window(session, w.start, w.end) for w in baseline_windows(as_of)]
+    baselines = baseline_windows(as_of)
+    priors = [_counts_in_window(session, w.start, w.end) for w in baselines]
     first_seen = _first_event_at(session)
 
     scored = []
@@ -103,7 +104,7 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
         # earliest_baseline_start` implies `first <= w.start` for every window, and the
         # sum is already 8. An earlier draft had that branch; it was dead logic.
         first = first_seen.get(topic_id)
-        weeks = sum(1 for w in baseline_windows(as_of) if first is not None and first <= w.start)
+        weeks = sum(1 for w in baselines if first is not None and first <= w.start)
         prior_counts = [p.get(topic_id, {}).get("total", 0) for p in priors]
         scored.append(
             score_topic(

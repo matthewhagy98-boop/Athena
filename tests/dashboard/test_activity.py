@@ -323,3 +323,84 @@ def test_newly_tracked_topics_are_ranked_against_the_median_baseline(db_session)
     newcomer_row = next(r for r in rows if r["topic"]["canonical_label"] == "Newcomer")
     assert newcomer_row["trend_score"] is None
     assert newcomer_row["is_newly_tracked"] is True
+
+
+def test_the_provisional_baseline_is_the_median_not_the_mean(db_session):
+    """Pins the aggregate `activity.py` actually uses.
+
+    Every other fixture builds exactly ONE scored topic per generation, and a singleton
+    list's median equals its mean, its min and its max -- so `median` could have been any
+    of them and no test would notice, despite the contract being documented in
+    rank_topics' docstring.
+
+    Three scored topics with baselines 1, 3 and 11 separate them: median 3, mean 5. The
+    newcomer's ranking key is 3.238 against the median and 2.158 against the mean, and the
+    lowest scored topic sits at 3.221 between the two -- so the choice flips the order of
+    two adjacent rows.
+
+    The median is the right aggregate here precisely because of this shape: one
+    high-baseline topic drags a mean upward and would push every newly-tracked topic down
+    the list, which is the burial this ranking exists to prevent.
+    """
+    for label, current, baseline in [("Low", 9, 1), ("Mid", 12, 3), ("High", 26, 11)]:
+        topic = _topic(db_session, label)
+        _events(db_session, topic.id, current, days_before_end=1)
+        for week in range(1, 9):
+            _events(db_session, topic.id, baseline, days_before_end=7 * week + 1)
+        _events(db_session, topic.id, 1, days_before_end=70)
+
+    newcomer = _topic(db_session, "Newcomer")
+    _events(db_session, newcomer.id, 11, days_before_end=1)
+
+    refresh_activity_snapshots(db_session, as_of=AS_OF)
+    labels = [r["topic"]["canonical_label"] for r in read_current_activity(db_session, limit=10)["topics"]]
+
+    assert labels.index("Newcomer") < labels.index("High"), (
+        f"ranked {labels} -- the newcomer fell below High, which is what using the mean "
+        f"(5) rather than the median (3) as the provisional baseline produces"
+    )
+
+
+def test_an_event_exactly_on_a_window_end_is_counted_in_that_window(db_session):
+    """The inclusive half of `window_start < detected_at <= window_end`.
+
+    Only the START boundary was exercised. The END boundary -- the `<=` -- was untested in
+    both the current and baseline windows, so tightening it to `<` would have silently
+    dropped every event landing exactly on midnight. That is not a rare timestamp: the
+    window ends at midnight UTC and the collection job writes on a schedule.
+    """
+    topic = _topic(db_session, "End boundary")
+    # days_before_end=0 is exactly window_end, which is midnight of the run day.
+    _events(db_session, topic.id, 5, days_before_end=0)
+
+    refresh_activity_snapshots(db_session, as_of=AS_OF)
+    rows = read_current_activity(db_session, limit=10)["topics"]
+
+    assert rows, "an event exactly on window_end was dropped from the current window"
+    assert rows[0]["event_count"] == 5
+
+
+def test_a_first_event_exactly_on_a_baseline_window_start_counts_that_window(db_session):
+    """The `first <= w.start` comparison in the weeks-tracked sum.
+
+    No fixture placed a topic's first-ever event exactly on a window boundary; the
+    "fully tracked" cases all sat 70 days back against a 63-day-deep baseline. Tightening
+    the comparison to `<` would cost such a topic one baseline week, dropping it from 8 to
+    7 and flipping it from scored to newly-tracked -- a visible change with no test.
+    """
+    topic = _topic(db_session, "Boundary tracked")
+    _events(db_session, topic.id, 10, days_before_end=1)
+    for week in range(1, 9):
+        _events(db_session, topic.id, 2, days_before_end=7 * week + 1)
+    # Exactly the earliest baseline window's start: 8 windows back, each 7 days, plus the
+    # 7-day span of that window itself = 63 days before the current window's end.
+    _events(db_session, topic.id, 1, days_before_end=63)
+
+    refresh_activity_snapshots(db_session, as_of=AS_OF)
+    row = read_current_activity(db_session, limit=10)["topics"][0]
+
+    assert row["baseline_weeks"] == 8, (
+        f"baseline_weeks was {row['baseline_weeks']}, not 8 -- a first event exactly on "
+        f"the earliest baseline window's start was not counted"
+    )
+    assert row["is_newly_tracked"] is False
