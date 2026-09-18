@@ -1,3 +1,4 @@
+import pytest
 import uuid
 from datetime import datetime, timedelta
 
@@ -215,3 +216,110 @@ def test_old_generations_are_pruned_but_the_current_one_is_never(db_session):
     ).scalars().all()
     assert stale_generation not in remaining
     assert current in remaining
+
+
+def test_a_run_that_dies_before_publishing_leaves_the_previous_one_serving(db_session, monkeypatch):
+    """FR-C-010, tested by actually interrupting the job.
+
+    test_readers_never_see_a_partially_written_generation plants an orphan generation by
+    hand. That proves the reader filters on the watermark, but it cannot distinguish
+    write-then-publish from publish-then-write, because no run ever fails in it. This one
+    fails a real run between ranking and publishing.
+
+    With the correct ordering the watermark still points at the previous generation, so
+    readers keep seeing it. With the ordering reversed -- watermark advanced before the
+    rows are written -- the watermark would point at a generation containing no rows and
+    the dashboard would go blank on every failed run.
+    """
+    import dashboard.activity as activity_module
+
+    topic = _topic(db_session, "Survivor")
+    _events(db_session, topic.id, 6, days_before_end=1)
+    refresh_activity_snapshots(db_session, as_of=AS_OF)
+    before = read_current_activity(db_session, limit=10)
+    assert before["topics"][0]["event_count"] == 6
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("died mid-run")
+
+    monkeypatch.setattr(activity_module, "rank_topics", explode)
+
+    with pytest.raises(RuntimeError):
+        refresh_activity_snapshots(db_session, as_of=AS_OF)
+
+    after = read_current_activity(db_session, limit=10)
+    assert after["topics"] == before["topics"], "a failed run changed what readers see"
+    assert after["topics"], "the dashboard went blank after a failed run"
+
+
+def test_pruning_is_by_age_not_by_everything_except_the_current(db_session):
+    """Two different rules, only one correct, and the original test could not tell them apart.
+
+    It planted a single stale generation, so "delete rows older than the horizon" and
+    "delete every generation except the current one" produced identical results. The
+    second rule would throw away yesterday's generation on every run, which is the only
+    history available for diagnosing a bad ranking.
+    """
+    from dashboard.activity import RETENTION_DAYS
+
+    topic = _topic(db_session, "Retention")
+    _events(db_session, topic.id, 6, days_before_end=1)
+
+    stale = uuid.uuid4()
+    recent = uuid.uuid4()
+    for generation, age_days in ((stale, RETENTION_DAYS + 1), (recent, 3)):
+        db_session.add(
+            TopicActivitySnapshot(
+                generation_id=generation,
+                topic_id=topic.id,
+                window_start=datetime(2025, 1, 1),
+                window_end=datetime(2025, 1, 8),
+                event_count=1,
+                rank=1,
+                computed_at=datetime(2026, 8, 2) - timedelta(days=age_days),
+            )
+        )
+    db_session.flush()
+
+    current = refresh_activity_snapshots(db_session, as_of=AS_OF)
+
+    remaining = set(
+        db_session.execute(select(TopicActivitySnapshot.generation_id).distinct()).scalars().all()
+    )
+    assert stale not in remaining, "a generation past the retention horizon survived"
+    assert recent in remaining, "pruning deleted a non-current generation that was still young"
+    assert current in remaining
+
+
+def test_newly_tracked_topics_are_ranked_against_the_median_baseline(db_session):
+    """The median must actually be computed, not stubbed to zero.
+
+    The trend-level tests pass provisional_baseline explicitly, so they cannot tell
+    whether this module derives it. It matters: with the real median the newly-tracked
+    topic's key is 0.909 and the scored topic wins; with 0.0 it is 10.0 and the
+    newly-tracked topic wins. Those are opposite orderings of the same two rows, and the
+    widget shows raw counts, so the wrong one renders "9 changes" above "30 changes".
+    """
+    established = _topic(db_session, "Established")
+    _events(db_session, established.id, 30, days_before_end=1)
+    for week in range(1, 9):
+        _events(db_session, established.id, 10, days_before_end=7 * week + 1)
+    # One event older than every baseline window, so the topic counts as fully tracked
+    # without contributing to any prior window's count.
+    _events(db_session, established.id, 1, days_before_end=70)
+
+    newcomer = _topic(db_session, "Newcomer")
+    _events(db_session, newcomer.id, 9, days_before_end=1)
+
+    refresh_activity_snapshots(db_session, as_of=AS_OF)
+    rows = read_current_activity(db_session, limit=10)["topics"]
+
+    labels = [r["topic"]["canonical_label"] for r in rows]
+    assert labels[0] == "Established", (
+        f"ranked {labels} -- a newly-tracked topic with 9 events outranked a scored "
+        f"topic with 30, which is what a zero provisional baseline produces"
+    )
+    # And the newly-tracked topic still carries no score of its own (FR-C-003).
+    newcomer_row = next(r for r in rows if r["topic"]["canonical_label"] == "Newcomer")
+    assert newcomer_row["trend_score"] is None
+    assert newcomer_row["is_newly_tracked"] is True

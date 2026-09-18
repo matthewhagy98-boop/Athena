@@ -71,7 +71,7 @@ def test_ranking_is_by_score_descending():
     high = score_topic(_counts(topic_id=ID_A, event_count=24), [1] * 8, weeks_tracked=8)
     low = score_topic(_counts(topic_id=ID_B, event_count=6), [5] * 8, weeks_tracked=8)
 
-    ranked = rank_topics([low, high])
+    ranked = rank_topics([low, high], provisional_baseline=5.0)
 
     assert [s.counts.topic_id for s in ranked] == [ID_A, ID_B]
 
@@ -82,7 +82,7 @@ def test_a_busy_newly_tracked_topic_is_not_buried_below_a_marginal_old_one():
     marginal_old = score_topic(_counts(topic_id=ID_A, event_count=6), [5] * 8, weeks_tracked=8)
     busy_new = score_topic(_counts(topic_id=ID_B, event_count=40), [], weeks_tracked=0)
 
-    ranked = rank_topics([marginal_old, busy_new])
+    ranked = rank_topics([marginal_old, busy_new], provisional_baseline=5.0)
 
     assert ranked[0].counts.topic_id == ID_B
 
@@ -93,8 +93,8 @@ def test_ranking_is_stable_for_equal_keys():
     a = score_topic(_counts(topic_id=ID_A, event_count=10), [2] * 8, weeks_tracked=8)
     b = score_topic(_counts(topic_id=ID_B, event_count=10), [2] * 8, weeks_tracked=8)
 
-    assert [s.counts.topic_id for s in rank_topics([a, b])] == [ID_A, ID_B]
-    assert [s.counts.topic_id for s in rank_topics([b, a])] == [ID_B, ID_A]
+    assert [s.counts.topic_id for s in rank_topics([a, b], 2.0)] == [ID_A, ID_B]
+    assert [s.counts.topic_id for s in rank_topics([b, a], 2.0)] == [ID_B, ID_A]
 
 
 def test_breakdown_counts_are_carried_through_untouched():
@@ -131,3 +131,48 @@ def test_the_result_dataclasses_are_immutable():
         counts.event_count = 99
     with _pytest.raises(dataclasses.FrozenInstanceError):
         scored.trend_score = 99.0
+
+
+def test_a_busier_scored_topic_outranks_a_quieter_newly_tracked_one():
+    # The defect this provisional baseline fixes. Ranking newly-tracked topics on raw
+    # event_count put them on a different scale from trend_score, so these exact
+    # middle-range magnitudes -- where real topics live -- inverted:
+    #   scored c=30 b=10 -> key 4.203   vs   new c=9 -> key 9.0   (new won)
+    # The widget shows raw counts, so that rendered as "9 changes" above "30 changes"
+    # under a heading reading Most active topics.
+    for scored_count, baseline, new_count in [(30, 10, 9), (24, 7, 12), (50, 20, 30)]:
+        scored = score_topic(
+            _counts(topic_id=ID_A, event_count=scored_count), [baseline] * 8, weeks_tracked=8
+        )
+        newly = score_topic(_counts(topic_id=ID_B, event_count=new_count), [], weeks_tracked=0)
+
+        ranked = rank_topics([newly, scored], provisional_baseline=float(baseline))
+
+        assert ranked[0].counts.topic_id == ID_A, (
+            f"a newly-tracked topic with {new_count} events outranked a scored topic "
+            f"with {scored_count}"
+        )
+
+
+def test_the_provisional_score_is_never_stored_on_the_topic():
+    # FR-C-003: trend_score stays null for a newly-tracked topic, on the row and in the
+    # API. The provisional value orders the list and nothing else -- storing it would put
+    # a number on screen that claims a baseline the topic does not have.
+    newly = score_topic(_counts(event_count=40), [], weeks_tracked=0)
+
+    ranked = rank_topics([newly], provisional_baseline=5.0)
+
+    assert ranked[0].trend_score is None
+    assert ranked[0].baseline_mean is None
+    assert ranked[0].is_newly_tracked is True
+
+
+def test_with_no_scored_topics_ranking_falls_back_to_pure_count_order():
+    # Every topic newly tracked: one baseline applies to all of them, so the key stays
+    # monotonic in event_count and the order is simply busiest-first.
+    small = score_topic(_counts(topic_id=ID_A, event_count=7), [], weeks_tracked=0)
+    large = score_topic(_counts(topic_id=ID_B, event_count=40), [], weeks_tracked=0)
+
+    ranked = rank_topics([small, large], provisional_baseline=0.0)
+
+    assert [s.counts.event_count for s in ranked] == [40, 7]

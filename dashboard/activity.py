@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta
+from statistics import median
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -119,7 +120,15 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
             )
         )
 
-    for position, item in enumerate(rank_topics(scored), start=1):
+    # The median baseline of the topics that HAVE one. Newly-tracked topics are ranked
+    # against it so both kinds sit on one scale -- see rank_topics. With no scored topic
+    # in the generation, 0.0: every topic is then newly tracked, the same baseline applies
+    # to all of them, and the key stays monotonic in event_count, which is the right
+    # ordering for that case.
+    scored_baselines = [s.baseline_mean for s in scored if s.baseline_mean is not None]
+    provisional_baseline = median(scored_baselines) if scored_baselines else 0.0
+
+    for position, item in enumerate(rank_topics(scored, provisional_baseline), start=1):
         session.add(
             TopicActivitySnapshot(
                 generation_id=generation,

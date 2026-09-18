@@ -68,16 +68,31 @@ def score_topic(counts: TopicCounts, prior_counts: list[int], weeks_tracked: int
     )
 
 
-def rank_topics(scored: list[ScoredTopic]) -> list[ScoredTopic]:
-    """Rank by trend_score where there is one, by event_count where there is not.
+def rank_topics(scored: list[ScoredTopic], provisional_baseline: float) -> list[ScoredTopic]:
+    """Rank scored and newly-tracked topics together, on one scale.
 
-    Newly tracked topics interleave by count rather than being segregated below scored
-    ones, so a genuinely busy new topic is not buried under a marginally elevated old one.
+    A newly-tracked topic has no baseline, so it cannot have a real trend_score. Ranking
+    it on raw event_count instead put the two kinds on different scales -- a smoothed
+    log-ratio of typically 4-5 against an unbounded integer -- so any newly-tracked topic
+    with about 9 events outranked a scored topic with 30. The widget shows raw counts, so
+    that read as "9 changes" above "30 changes" under a heading saying Most active topics.
+
+    Instead it is scored with the same formula against `provisional_baseline`: the median
+    baseline of the scored topics in this generation. "We do not know this topic's
+    history, so assume it is typical."
+
+    This is a RANKING KEY ONLY. FR-C-003 requires trend_score to stay null for a
+    newly-tracked topic, and it does -- on the row, in the API, and in the UI. The
+    provisional value is never stored or displayed; it exists solely to order the list.
+
     Python's sort is stable, so equal keys preserve input order and the ranking does not
     reshuffle between runs for no reason.
     """
-    return sorted(
-        scored,
-        key=lambda s: s.trend_score if s.trend_score is not None else float(s.counts.event_count),
-        reverse=True,
-    )
+
+    def key(topic: ScoredTopic) -> float:
+        if topic.trend_score is not None:
+            return topic.trend_score
+        count = topic.counts.event_count
+        return round((count + 1) / (provisional_baseline + 1) * math.log10(count + 1), 3)
+
+    return sorted(scored, key=key, reverse=True)
