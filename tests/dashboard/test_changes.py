@@ -68,16 +68,25 @@ def test_an_event_with_no_paper_is_always_included(db_session):
 
 
 def test_events_are_grouped_by_day_newest_first(db_session):
+    # Seeded in deliberately scrambled order, and asserted against the exact expected
+    # sequence rather than against sorted(dates, reverse=True).
+    #
+    # The original seeded two days in ascending order and asserted the result was sorted.
+    # Removing the ORDER BY from the query left it passing -- verified empirically, not
+    # argued -- because with two rows inserted oldest-first, Postgres happened to return
+    # them in an order the assertion accepted. Comparing a list to its own sorted form
+    # can only fail if the list is unsorted, which is a weaker claim than "these dates,
+    # in this order".
     topic = _topic(db_session)
     now = datetime.utcnow()
-    _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED, now - timedelta(days=3))
-    _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED, now - timedelta(days=1))
+    for day in (3, 1, 5, 2):  # middle, newest, oldest, then middle again
+        _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED, now - timedelta(days=day))
 
     feed = read_change_feed(db_session, days=7, limit=50)
 
-    dates = [day["date"] for day in feed["days"]]
-    assert dates == sorted(dates, reverse=True)
-    assert len(feed["days"]) == 2
+    expected = [(now - timedelta(days=day)).date().isoformat() for day in (1, 2, 3, 5)]
+    assert [d["date"] for d in feed["days"]] == expected
+    assert len(feed["days"]) == 4
 
 
 def test_events_within_a_day_are_newest_first(db_session):
@@ -102,15 +111,23 @@ def test_the_window_excludes_older_events(db_session):
 def test_limit_truncates_the_most_recent_events_overall(db_session):
     # The cap is on total events, not per day: the feed is a recency window, not a
     # browsable archive, so truncating per day would hide a busy day's newest items.
+    #
+    # Events must span SEVERAL days to tell the two rules apart. With everything on one
+    # day -- as this test originally seeded it -- an overall cap of 4 and a per-day cap
+    # of 4 produce the identical number, so the test could not detect the behaviour it
+    # names. Twelve events over three days with limit=5 separates them: an overall cap
+    # returns 5 events across 2 days, a per-day cap returns all 12 across 3.
     topic = _topic(db_session)
     now = datetime.utcnow()
-    for index in range(6):
-        _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED,
-               now - timedelta(days=1, minutes=index))
+    for day in (1, 2, 3):
+        for minute in range(4):
+            _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED,
+                   now - timedelta(days=day, minutes=minute))
 
-    feed = read_change_feed(db_session, days=7, limit=4)
+    feed = read_change_feed(db_session, days=7, limit=5)
 
-    assert feed["total_events"] == 4
+    assert feed["total_events"] == 5, "the cap was applied per day rather than overall"
+    assert len(feed["days"]) == 2, "an overall cap of 5 spans exactly two of the three days"
 
 
 def test_an_empty_feed_is_not_an_error(db_session):
@@ -126,3 +143,66 @@ def test_each_event_carries_its_topic_label(db_session):
 
     assert event["topic"]["canonical_label"] == "GLP-1 receptor agonists"
     assert event["topic"]["id"] == str(topic.id)
+
+
+def test_a_pending_score_is_not_surfaced_as_an_evidence_tier(db_session):
+    """A pending Score is not a score.
+
+    Score rows are created with is_pending=True before scoring completes, carrying column
+    defaults -- evidence_tier='speculative', final_score=0.0. Surfacing those labels an
+    unscored paper as speculative evidence, which is a claim about the work that nobody
+    made. Sub-project A shipped exactly this defect once; webapp/search_index.py carries
+    the same rule.
+
+    Nothing covered it here: dropping the is_pending guard passed all nine other tests,
+    because no fixture had a Score at all.
+    """
+    from evidence_engine.db.models import EvidenceTier, Score, StudyType
+
+    topic = _topic(db_session)
+    paper = _paper(db_session, "Freshly ingested, not yet scored")
+    db_session.add(
+        Score(
+            paper_id=paper.id,
+            evidence_tier=EvidenceTier.SPECULATIVE,  # the column default, not a judgement
+            study_type=StudyType.UNKNOWN,
+            final_score=0.0,
+            is_pending=True,
+            model_version="v1",
+        )
+    )
+    db_session.flush()
+    _event(db_session, topic.id, ChangeEventType.NEW_PAPER, datetime.utcnow() - timedelta(days=1),
+           paper.id)
+
+    event = read_change_feed(db_session, days=7, limit=50)["days"][0]["events"][0]
+
+    assert event["evidence_tier"] is None, (
+        "a pending Score's placeholder tier reached the feed as though it were a real one"
+    )
+
+
+def test_a_settled_score_is_surfaced(db_session):
+    # The complement: the guard must not suppress a real tier, or the feed would never
+    # show one at all and the test above would pass vacuously.
+    from evidence_engine.db.models import EvidenceTier, Score, StudyType
+
+    topic = _topic(db_session)
+    paper = _paper(db_session, "Scored")
+    db_session.add(
+        Score(
+            paper_id=paper.id,
+            evidence_tier=EvidenceTier.ESTABLISHED,
+            study_type=StudyType.RCT,
+            final_score=80.0,
+            is_pending=False,
+            model_version="v1",
+        )
+    )
+    db_session.flush()
+    _event(db_session, topic.id, ChangeEventType.NEW_PAPER, datetime.utcnow() - timedelta(days=1),
+           paper.id)
+
+    event = read_change_feed(db_session, days=7, limit=50)["days"][0]["events"][0]
+
+    assert event["evidence_tier"] == "established"
