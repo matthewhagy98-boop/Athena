@@ -757,6 +757,48 @@ git commit -m "feat: add dashboard trend score and ranking"
 
 ---
 
+### Amendment 2026-09-17: newly-tracked topics rank on a provisional baseline
+
+Task 3's review found that `rank_topics` mixed non-commensurable quantities: scored
+topics sorted on `trend_score` (a smoothed log-ratio, typically 4-5) while newly-tracked
+topics sorted on raw `event_count` (unbounded). Measured, the failure is systematic
+rather than marginal — any newly-tracked topic with about 9 or more events outranks a
+scored topic with a typical score, even at 3x the event count:
+
+| scored topic | its key | new topic | its key | order |
+|---|---|---|---|---|
+| c=30, b=10 | 4.203 | c=9 | 9.0 | new first |
+| c=24, b=7.375 | 4.369 | c=12 | 12.0 | new first |
+| c=50, b=20 | 4.147 | c=30 | 30.0 | new first |
+
+The widget displays raw counts (FR-C-004), so a reader sees "9 changes" above
+"30 changes" under a heading reading *Most active topics*, with nothing on screen to
+explain it.
+
+**Resolution (user decision).** Newly-tracked topics are ranked with the same formula,
+substituting a *provisional* baseline: the median `baseline_mean` of the scored topics in
+the same generation — "we do not know this topic's history, so assume it is typical."
+Both kinds then sit on one scale and a busy new topic still is not buried.
+
+**This changes the ranking key only, never the stored value.** FR-C-003 requires
+`trend_score` to be null for a newly-tracked topic, and it stays null on the row and in
+the API. The provisional score exists solely to order the list.
+
+Interface changes:
+- `rank_topics(scored: list[ScoredTopic], provisional_baseline: float) -> list[ScoredTopic]`.
+  For a topic with `trend_score is not None` the key is that score; otherwise the key is
+  `(c + 1) / (provisional_baseline + 1) * log10(c + 1)`.
+- `dashboard/activity.py` computes the median of `baseline_mean` across scored topics
+  before ranking and passes it. When no topic is scored, pass `0.0`: every topic is then
+  newly tracked, the same baseline applies to all of them, and the key stays monotonic in
+  `event_count`, which is the correct ordering for that case.
+
+Required tests: a scored topic with more events outranks a newly-tracked topic with
+fewer, for the middle-range magnitudes in the table above; and the no-scored-topics case
+orders purely by count.
+
+---
+
 ## Task 4: Activity Aggregation and the Daily Job
 
 **Files:**
