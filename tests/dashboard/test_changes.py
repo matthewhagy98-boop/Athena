@@ -206,3 +206,38 @@ def test_a_settled_score_is_surfaced(db_session):
     event = read_change_feed(db_session, days=7, limit=50)["days"][0]["events"][0]
 
     assert event["evidence_tier"] == "established"
+
+
+def test_the_days_parameter_actually_narrows_the_window(db_session):
+    """Every other test calls days=7, so hardcoding timedelta(days=7) survives them all.
+
+    The endpoint accepts days between 1 and 30 and the UI will use it; a cutoff that
+    ignores the caller would silently serve a week's feed whatever was asked for.
+    """
+    topic = _topic(db_session)
+    _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED,
+           datetime.utcnow() - timedelta(days=5))
+
+    assert read_change_feed(db_session, days=7, limit=50)["total_events"] == 1
+    assert read_change_feed(db_session, days=3, limit=50)["total_events"] == 0
+
+
+def test_timestamps_carry_an_explicit_utc_offset(db_session):
+    """The Z suffix, which had no direct coverage anywhere in this module.
+
+    Every timestamp here is naive UTC, and a bare isoformat() emits no offset. JavaScript
+    parses an offset-less date-time as LOCAL time, so the whole feed would shift by the
+    viewer's UTC offset -- filing events under the wrong day heading for anyone west of
+    UTC. dashboard.activity._iso exists for this, and reimplementing the timestamp inline
+    without it would have passed every other test in this file.
+    """
+    from dashboard.activity import _iso
+
+    topic = _topic(db_session)
+    when = datetime.utcnow() - timedelta(days=1)
+    _event(db_session, topic.id, ChangeEventType.CONSENSUS_UPDATED, when)
+
+    event = read_change_feed(db_session, days=7, limit=50)["days"][0]["events"][0]
+
+    assert event["detected_at"].endswith("Z"), event["detected_at"]
+    assert event["detected_at"] == _iso(when)

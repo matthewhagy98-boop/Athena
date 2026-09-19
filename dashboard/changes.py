@@ -10,6 +10,10 @@ from evidence_engine.db.models import ChangeEvent, ChangeEventType, Paper, Score
 def read_change_feed(session: Session, days: int, limit: int) -> dict:
     """Recent change events, grouped by calendar day, newest first.
 
+    `total_events` counts the events in THIS response, after `limit` truncation -- not
+    the number matching the window. The feed is a recency view, so "N changes" means "N
+    shown here".
+
     Retraction filter (spec 14.3): an event is included when it is itself a retraction,
     or has no paper, or its paper is not retracted. The effect is that a paper later found
     to be retracted stops being advertised as new evidence, while the retraction itself
