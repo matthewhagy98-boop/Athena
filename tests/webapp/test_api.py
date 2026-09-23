@@ -615,10 +615,18 @@ def test_dashboard_activity_rejects_an_out_of_range_limit(db_session):
 def test_dashboard_changes_rejects_out_of_range_parameters(db_session):
     client = _client(db_session)
 
+    # Both ends of both ranges. The original pinned days at 0/31/30 but only the UPPER
+    # end of limit, so an off-by-one on its lower bound passed -- confirmed by mutation.
+    # The activity endpoint's test pins all four; this one now matches.
     assert client.get("/dashboard/changes?days=0").status_code == 422
+    assert client.get("/dashboard/changes?days=1").status_code == 200
+    assert client.get("/dashboard/changes?days=30").status_code == 200
     assert client.get("/dashboard/changes?days=31").status_code == 422
+
+    assert client.get("/dashboard/changes?limit=0").status_code == 422
+    assert client.get("/dashboard/changes?limit=1").status_code == 200
+    assert client.get("/dashboard/changes?limit=50").status_code == 200
     assert client.get("/dashboard/changes?limit=51").status_code == 422
-    assert client.get("/dashboard/changes?days=30&limit=50").status_code == 200
 
 
 def test_dashboard_personal_returns_200_and_no_profile_for_a_fresh_user(db_session):
@@ -752,3 +760,42 @@ def test_dashboard_routes_do_not_shadow_the_static_mount(db_session):
     mount_at = source.index('app.mount("/"')
     for route in ["/dashboard/activity", "/dashboard/changes", "/dashboard/personal"]:
         assert source.index(route) < mount_at, f"{route} is declared after the static mount"
+
+
+def test_dashboard_personal_returns_a_blurb_for_a_user_with_interests(db_session):
+    """The endpoint computes the blurb, and only the null case was asserted.
+
+    It is computed server-side rather than in the client so the copy rules live in one
+    tested place. Dropping that line left every endpoint test passing -- the dashboard
+    would simply have shown no blurb, silently.
+    """
+    from datetime import timedelta
+
+    from digest.models import InterestProfile, ProfileTopic
+    from digest.profiles import create_anonymous_user
+    from evidence_engine.db.models import ChangeEvent, ChangeEventType, Topic
+
+    user = create_anonymous_user(db_session)
+    topic = Topic(canonical_label="Atrial fibrillation")
+    db_session.add(topic)
+    db_session.flush()
+    profile = InterestProfile(user_id=user.id)
+    db_session.add(profile)
+    db_session.flush()
+    db_session.add(ProfileTopic(profile_id=profile.id, topic_id=topic.id))
+    for _ in range(3):
+        db_session.add(
+            ChangeEvent(
+                topic_id=topic.id,
+                event_type=ChangeEventType.NEW_PAPER,
+                detected_at=datetime.utcnow() - timedelta(days=1),
+            )
+        )
+    db_session.flush()
+
+    body = _client(db_session).get(f"/dashboard/personal?user_id={user.id}").json()
+
+    assert body["has_profile"] is True
+    assert body["blurb"], "the endpoint returned no blurb for a user with interests"
+    assert "3 new papers" in body["blurb"]
+    assert "this week" in body["blurb"]
