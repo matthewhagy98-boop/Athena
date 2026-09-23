@@ -2,12 +2,16 @@ import uuid
 from collections.abc import Generator
 from datetime import date, datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from citations.aggregate import saved_search_velocity
 from citations.read import get_citation_history, get_paper_velocities
+from dashboard.activity import read_current_activity
+from dashboard.changes import read_change_feed
+from dashboard.interests import RateLimitExceeded, add_user_interest, remove_user_interest
+from dashboard.personal import personal_topic_summary, render_blurb
 from digest.models import User
 from digest.profiles import create_anonymous_user
 from evidence_engine.db.models import EvidenceTier, Paper, PaperTopic, StudyType, Topic
@@ -322,6 +326,79 @@ def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> d
     if row is None:
         raise HTTPException(status_code=503, detail="Synthesis is not enabled")
     return _synthesis_out(row)
+
+
+@app.get("/dashboard/activity")
+def dashboard_activity_endpoint(
+    limit: int = Query(default=10), db: Session = Depends(get_db)
+) -> dict:
+    if not 1 <= limit <= 25:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 25")
+    return read_current_activity(db, limit=limit)
+
+
+@app.get("/dashboard/changes")
+def dashboard_changes_endpoint(
+    days: int = Query(default=7), limit: int = Query(default=20), db: Session = Depends(get_db)
+) -> dict:
+    if not 1 <= days <= 30:
+        raise HTTPException(status_code=422, detail="days must be between 1 and 30")
+    if not 1 <= limit <= 50:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 50")
+    return read_change_feed(db, days=days, limit=limit)
+
+
+@app.get("/dashboard/personal")
+def dashboard_personal_endpoint(
+    user_id: uuid.UUID, days: int = Query(default=7), db: Session = Depends(get_db)
+) -> dict:
+    if not 1 <= days <= 30:
+        raise HTTPException(status_code=422, detail="days must be between 1 and 30")
+    try:
+        summary = personal_topic_summary(db, user_id, days=days)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # The blurb is deterministic and computed here rather than client-side, so the copy
+    # rules live in one tested place.
+    summary["blurb"] = render_blurb(summary)
+    return summary
+
+
+@app.post("/interests", status_code=201)
+def add_interest_endpoint(payload: dict, response: Response, db: Session = Depends(get_db)) -> dict:
+    raw_user_id = payload.get("user_id")
+    try:
+        user_id = uuid.UUID(str(raw_user_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail="user_id must be a UUID") from exc
+
+    try:
+        topic, created = add_user_interest(db, user_id, payload.get("free_text") or "")
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RateLimitExceeded as exc:
+        # 429, not 422: the request is well-formed and will succeed later.
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not created:
+        response.status_code = 200
+    return {
+        "topic": {"id": str(topic.id), "canonical_label": topic.canonical_label},
+        "created": created,
+    }
+
+
+@app.delete("/interests/{topic_id}", status_code=204)
+def remove_interest_endpoint(
+    topic_id: uuid.UUID, user_id: uuid.UUID, db: Session = Depends(get_db)
+) -> Response:
+    try:
+        remove_user_interest(db, user_id, topic_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 from pathlib import Path

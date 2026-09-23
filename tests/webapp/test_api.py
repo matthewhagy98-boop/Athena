@@ -593,3 +593,162 @@ def test_synthesis_response_carries_provenance(db_session, monkeypatch):
 
     assert body["model_id"] == "claude-sonnet-4-6"
     assert body["generated_at"] == "2026-09-15T12:00:00Z"
+
+
+def test_dashboard_activity_is_empty_before_the_job_has_run(db_session):
+    client = _client(db_session)
+
+    body = client.get("/dashboard/activity").json()
+
+    assert body == {"computed_at": None, "window_start": None, "window_end": None, "topics": []}
+
+
+def test_dashboard_activity_rejects_an_out_of_range_limit(db_session):
+    client = _client(db_session)
+
+    assert client.get("/dashboard/activity?limit=0").status_code == 422
+    assert client.get("/dashboard/activity?limit=26").status_code == 422
+    assert client.get("/dashboard/activity?limit=25").status_code == 200
+    assert client.get("/dashboard/activity?limit=1").status_code == 200
+
+
+def test_dashboard_changes_rejects_out_of_range_parameters(db_session):
+    client = _client(db_session)
+
+    assert client.get("/dashboard/changes?days=0").status_code == 422
+    assert client.get("/dashboard/changes?days=31").status_code == 422
+    assert client.get("/dashboard/changes?limit=51").status_code == 422
+    assert client.get("/dashboard/changes?days=30&limit=50").status_code == 200
+
+
+def test_dashboard_personal_returns_200_and_no_profile_for_a_fresh_user(db_session):
+    # The cold-start case, and the one that must never 500: every anonymous user starts
+    # without an InterestProfile.
+    from digest.profiles import create_anonymous_user
+
+    user = create_anonymous_user(db_session)
+    client = _client(db_session)
+
+    response = client.get(f"/dashboard/personal?user_id={user.id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["has_profile"] is False
+    assert body["topics"] == []
+    assert body["blurb"] is None
+
+
+def test_dashboard_personal_404s_for_an_unknown_user(db_session):
+    client = _client(db_session)
+
+    assert client.get(f"/dashboard/personal?user_id={uuid.uuid4()}").status_code == 404
+
+
+def test_dashboard_personal_422s_for_a_malformed_user_id(db_session):
+    client = _client(db_session)
+
+    assert client.get("/dashboard/personal?user_id=not-a-uuid").status_code == 422
+
+
+def test_post_interests_creates_and_is_idempotent(db_session, monkeypatch):
+    from digest.profiles import create_anonymous_user
+    from evidence_engine.db.models import Topic
+
+    def fake_get_or_create_topic(session, free_text):
+        from sqlalchemy import select as _select
+
+        existing = session.execute(
+            _select(Topic).where(Topic.canonical_label == free_text)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+        topic = Topic(canonical_label=free_text)
+        session.add(topic)
+        session.flush()
+        return topic
+
+    monkeypatch.setattr("digest.profiles.get_or_create_topic", fake_get_or_create_topic)
+    user = create_anonymous_user(db_session)
+    client = _client(db_session)
+
+    first = client.post("/interests", json={"user_id": str(user.id), "free_text": "sepsis"})
+    assert first.status_code == 201
+    assert first.json()["created"] is True
+
+    second = client.post("/interests", json={"user_id": str(user.id), "free_text": "sepsis"})
+    assert second.status_code == 200
+    assert second.json()["created"] is False
+
+
+def test_post_interests_422s_on_empty_text(db_session):
+    from digest.profiles import create_anonymous_user
+
+    user = create_anonymous_user(db_session)
+    client = _client(db_session)
+
+    response = client.post("/interests", json={"user_id": str(user.id), "free_text": "  "})
+
+    assert response.status_code == 422
+
+
+def test_post_interests_404s_for_an_unknown_user(db_session):
+    client = _client(db_session)
+
+    response = client.post(
+        "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "sepsis"}
+    )
+
+    assert response.status_code == 404
+
+
+def test_post_interests_429s_when_rate_limited(db_session, monkeypatch):
+    # 429, not 422: the request is well-formed and will succeed later. Sending 422 would
+    # tell the client its input was wrong and invite it to retry immediately.
+    from dashboard.interests import RateLimitExceeded
+
+    def raising(*args, **kwargs):
+        raise RateLimitExceeded("too many")
+
+    monkeypatch.setattr("webapp.api.add_user_interest", raising)
+    client = _client(db_session)
+
+    response = client.post(
+        "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "sepsis"}
+    )
+
+    assert response.status_code == 429
+
+
+def test_delete_interests_returns_204_then_404(db_session, monkeypatch):
+    from digest.profiles import create_anonymous_user
+    from evidence_engine.db.models import Topic
+
+    def fake_get_or_create_topic(session, free_text):
+        topic = Topic(canonical_label=free_text)
+        session.add(topic)
+        session.flush()
+        return topic
+
+    monkeypatch.setattr("digest.profiles.get_or_create_topic", fake_get_or_create_topic)
+    user = create_anonymous_user(db_session)
+    client = _client(db_session)
+    topic_id = client.post(
+        "/interests", json={"user_id": str(user.id), "free_text": "removable"}
+    ).json()["topic"]["id"]
+
+    assert client.delete(f"/interests/{topic_id}?user_id={user.id}").status_code == 204
+    # Not idempotent on repeat, matching DELETE /saved-searches/{id}.
+    assert client.delete(f"/interests/{topic_id}?user_id={user.id}").status_code == 404
+
+
+def test_dashboard_routes_do_not_shadow_the_static_mount(db_session):
+    # The StaticFiles mount catches every unmatched path, so a route declared after it is
+    # unreachable. This asserts the file's structure, which no functional test would catch.
+    import inspect
+
+    import webapp.api as api_module
+
+    source = inspect.getsource(api_module)
+    mount_at = source.index('app.mount("/"')
+    for route in ["/dashboard/activity", "/dashboard/changes", "/dashboard/personal"]:
+        assert source.index(route) < mount_at, f"{route} is declared after the static mount"
