@@ -141,3 +141,47 @@ def test_removing_from_a_user_with_no_profile_raises(db_session):
 
     with pytest.raises(LookupError):
         remove_user_interest(db_session, user.id, uuid.uuid4())
+
+
+def test_the_quota_is_charged_before_the_outbound_call(db_session, monkeypatch):
+    """Ordering, not just presence. Charging after the call survives every other test.
+
+    This endpoint's whole reason for having a limit is that get_or_create_topic reaches
+    PubMed. If the counter were incremented only on success, a burst of concurrent
+    requests would all pass the check while every one of them was still in flight, and
+    the provider would see the full burst. Charging first means a failed call still costs
+    the caller its slot -- the conservative direction for a limit whose job is to protect
+    someone else's service.
+    """
+    from sqlalchemy import select as _select
+
+    from dashboard.models import DashboardRateWindow
+
+    user = create_anonymous_user(db_session)
+
+    def failing_get_or_create_topic(session, free_text):
+        raise RuntimeError("PubMed unreachable")
+
+    monkeypatch.setattr("digest.profiles.get_or_create_topic", failing_get_or_create_topic)
+
+    with pytest.raises(RuntimeError):
+        add_user_interest(db_session, user.id, "unreachable topic", now=NOW)
+
+    counter = db_session.execute(
+        _select(DashboardRateWindow).where(DashboardRateWindow.subject == f"user:{user.id}")
+    ).scalar_one_or_none()
+
+    assert counter is not None, "no quota was charged for a request that reached the provider"
+    assert counter.request_count == 1
+
+
+def test_the_documented_limit_is_thirty_per_hour():
+    """The number comes from the spec, not from taste.
+
+    Spec section 12: POST /interests "MUST be capped at 30 requests/hour per user_id".
+    The other tests drive the limit symbolically through RATE_LIMIT_PER_HOUR, so the
+    constant could drift to any value and they would all still pass. Unlike a tuning knob,
+    a spec-stated figure is worth pinning -- changing it should be a deliberate act that
+    updates the spec too.
+    """
+    assert RATE_LIMIT_PER_HOUR == 30

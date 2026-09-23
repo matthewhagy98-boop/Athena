@@ -179,17 +179,53 @@ def test_there_is_no_blurb_without_a_profile(db_session):
 
 
 def test_the_blurb_never_uses_forbidden_copy(db_session):
+    # Driven across every branch of render_blurb, not one fixture. The branch the copy
+    # rules constrain MOST is the zero-change one -- "No change this week", never
+    # "nothing found" or "no results" -- and a single all-positive fixture never reaches
+    # it. A regression that put forbidden wording specifically in that sentence would
+    # have passed the original version of this test.
     forbidden = ["trending", "hot", "popular", "breakthrough", "important",
-                 "momentum", "real-time", "live"]
-    summary = {
-        "has_profile": True,
-        "topics": [
-            {"event_count": 40, "breakdown": {"new_paper": 30, "consensus_updated": 4,
-                                              "contradiction_flagged": 4, "paper_retracted": 2}},
-        ],
+                 "momentum", "real-time", "live", "nothing found", "no results"]
+
+    def summary(*topics):
+        return {"has_profile": True, "topics": list(topics)}
+
+    def topic(new_paper=0, consensus=0, contradiction=0, retracted=0):
+        return {
+            "event_count": new_paper + consensus + contradiction + retracted,
+            "breakdown": {
+                "new_paper": new_paper,
+                "consensus_updated": consensus,
+                "contradiction_flagged": contradiction,
+                "paper_retracted": retracted,
+            },
+        }
+
+    cases = {
+        "all four types": summary(topic(30, 4, 4, 2)),
+        "new papers only": summary(topic(new_paper=12)),
+        "a single new paper": summary(topic(new_paper=1)),
+        "consensus only": summary(topic(consensus=3)),
+        "contradictions only": summary(topic(contradiction=2)),
+        "retractions only": summary(topic(retracted=1)),
+        "zero change, one topic": summary(topic()),
+        "zero change, several topics": summary(topic(), topic(), topic()),
+        "mixed quiet and busy": summary(topic(), topic(new_paper=5)),
     }
 
-    text = render_blurb(summary).lower()
+    for name, payload in cases.items():
+        text = render_blurb(payload).lower()
+        for word in forbidden:
+            assert word not in text, f"{name!r} produced forbidden copy {word!r}: {text!r}"
 
-    for word in forbidden:
-        assert word not in text
+
+def test_the_zero_change_branch_says_no_change(db_session):
+    # Pins the wording the rules actually prescribe, not just the absence of bad wording.
+    # Asserting only what a string must NOT contain is satisfied by any replacement,
+    # including an empty one.
+    text = render_blurb({"has_profile": True, "topics": [
+        {"event_count": 0, "breakdown": {"new_paper": 0, "consensus_updated": 0,
+                                         "contradiction_flagged": 0, "paper_retracted": 0}},
+    ]})
+
+    assert "no change" in text.lower()
