@@ -185,3 +185,26 @@ def test_the_documented_limit_is_thirty_per_hour():
     updates the spec too.
     """
     assert RATE_LIMIT_PER_HOUR == 30
+
+
+def test_rejected_input_does_not_consume_quota(db_session):
+    """Validation runs before the quota is charged, and nothing pinned that ordering.
+
+    The quota exists to protect PubMed from repeated outbound calls. Blank text never
+    reaches PubMed, so charging for it would let a caller exhaust their own hourly budget
+    on input that cost the provider nothing -- punishing a typo as though it were abuse.
+    """
+    from sqlalchemy import select as _select
+
+    from dashboard.models import DashboardRateWindow
+
+    user = create_anonymous_user(db_session)
+
+    with pytest.raises(ValueError):
+        add_user_interest(db_session, user.id, "   ", now=NOW)
+
+    counter = db_session.execute(
+        _select(DashboardRateWindow).where(DashboardRateWindow.subject == f"user:{user.id}")
+    ).scalar_one_or_none()
+
+    assert counter is None or counter.request_count == 0

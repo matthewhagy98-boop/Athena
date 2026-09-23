@@ -229,3 +229,61 @@ def test_the_zero_change_branch_says_no_change(db_session):
     ]})
 
     assert "no change" in text.lower()
+
+
+def test_every_event_type_lands_in_its_own_breakdown_slot(db_session):
+    """Distinct counts per type, so a swapped mapping cannot produce an identical dict.
+
+    No test created a CONTRADICTION_FLAGGED or PAPER_RETRACTED event at all, and the one
+    test using two types gave each a count of 1 -- so swapping NEW_PAPER and
+    CONSENSUS_UPDATED in _TYPE_FIELDS produced exactly the same breakdown and survived.
+    Distinct counts make every mapping observable.
+    """
+    user = create_anonymous_user(db_session)
+    topic = _topic(db_session, "All four")
+    _interested(db_session, user, topic)
+    for count, event_type in (
+        (1, ChangeEventType.NEW_PAPER),
+        (2, ChangeEventType.CONSENSUS_UPDATED),
+        (3, ChangeEventType.CONTRADICTION_FLAGGED),
+        (4, ChangeEventType.PAPER_RETRACTED),
+    ):
+        for _ in range(count):
+            _event(db_session, topic.id, event_type, 1)
+
+    row = personal_topic_summary(db_session, user.id, days=7)["topics"][0]
+
+    assert row["breakdown"] == {
+        "new_paper": 1,
+        "consensus_updated": 2,
+        "contradiction_flagged": 3,
+        "paper_retracted": 4,
+    }
+    assert row["event_count"] == 10
+
+
+def test_the_personal_window_is_half_open_at_both_ends(db_session):
+    """`window_start < detected_at <= now`, pinned on both sides.
+
+    This is the third time on this branch that only one side of a boundary was tested.
+    `now` is injectable so the boundary can be hit exactly rather than approximately.
+    """
+    user = create_anonymous_user(db_session)
+    topic = _topic(db_session, "Boundaries")
+    _interested(db_session, user, topic)
+
+    now = datetime(2026, 8, 2, 12, 0, 0)
+    window_start = now - timedelta(days=7)
+    db_session.add(
+        ChangeEvent(topic_id=topic.id, event_type=ChangeEventType.NEW_PAPER,
+                    detected_at=window_start)
+    )
+    db_session.add(
+        ChangeEvent(topic_id=topic.id, event_type=ChangeEventType.NEW_PAPER, detected_at=now)
+    )
+    db_session.flush()
+
+    row = personal_topic_summary(db_session, user.id, days=7, now=now)["topics"][0]
+
+    # Exactly window_start is excluded; exactly now is included.
+    assert row["event_count"] == 1

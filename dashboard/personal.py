@@ -4,23 +4,22 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from dashboard.activity import _iso
+# _TYPE_FIELDS is imported rather than redefined: it was a verbatim duplicate of
+# activity.py's, and a review found that a swapped entry in one copy could not be
+# detected here. One definition means one place to get it wrong.
+from dashboard.activity import _TYPE_FIELDS, _iso
 from digest.models import InterestProfile, ProfileTopic, User
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Topic
 
-_TYPE_FIELDS = {
-    ChangeEventType.NEW_PAPER: "new_paper",
-    ChangeEventType.CONSENSUS_UPDATED: "consensus_updated",
-    ChangeEventType.CONTRADICTION_FLAGGED: "contradiction_flagged",
-    ChangeEventType.PAPER_RETRACTED: "paper_retracted",
-}
 
 
 def _empty_breakdown() -> dict:
     return {field: 0 for field in _TYPE_FIELDS.values()}
 
 
-def personal_topic_summary(session: Session, user_id: uuid.UUID, days: int) -> dict:
+def personal_topic_summary(
+    session: Session, user_id: uuid.UUID, days: int, now: datetime | None = None
+) -> dict:
     """Per-topic change counts for exactly the user's interest topics.
 
     Resolves the profile with scalar_one_or_none rather than calling
@@ -57,7 +56,7 @@ def personal_topic_summary(session: Session, user_id: uuid.UUID, days: int) -> d
         .order_by(ProfileTopic.added_at)
     ).all()
 
-    now = datetime.utcnow()
+    now = now or datetime.utcnow()
     window_start = now - timedelta(days=days)
     topic_ids = [topic.id for _, topic in links]
 
