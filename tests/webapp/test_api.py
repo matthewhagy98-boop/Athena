@@ -756,9 +756,20 @@ def test_dashboard_routes_do_not_shadow_the_static_mount(db_session):
 
     import webapp.api as api_module
 
+    # All five routes, not three. The two /interests routes were missing from this loop,
+    # which is the one place they most needed covering: when frontend/dist does not exist
+    # the mount is never registered, nothing can be shadowed, and every functional test
+    # passes regardless of declaration order -- so in that environment this check is the
+    # only guard, and it was silently skipping them.
     source = inspect.getsource(api_module)
     mount_at = source.index('app.mount("/"')
-    for route in ["/dashboard/activity", "/dashboard/changes", "/dashboard/personal"]:
+    for route in [
+        "/dashboard/activity",
+        "/dashboard/changes",
+        "/dashboard/personal",
+        '"/interests"',
+        "/interests/{topic_id}",
+    ]:
         assert source.index(route) < mount_at, f"{route} is declared after the static mount"
 
 
@@ -799,3 +810,38 @@ def test_dashboard_personal_returns_a_blurb_for_a_user_with_interests(db_session
     assert body["blurb"], "the endpoint returned no blurb for a user with interests"
     assert "3 new papers" in body["blurb"]
     assert "this week" in body["blurb"]
+
+
+def test_dashboard_personal_rejects_an_out_of_range_days(db_session):
+    # This endpoint's bound check had zero coverage: every other /dashboard/personal test
+    # omits `days` entirely, so deleting the check or shifting either bound passed the
+    # whole suite. Its two sibling endpoints already pin all four of their boundaries.
+    from digest.profiles import create_anonymous_user
+
+    user = create_anonymous_user(db_session)
+    client = _client(db_session)
+
+    assert client.get(f"/dashboard/personal?user_id={user.id}&days=0").status_code == 422
+    assert client.get(f"/dashboard/personal?user_id={user.id}&days=1").status_code == 200
+    assert client.get(f"/dashboard/personal?user_id={user.id}&days=30").status_code == 200
+    assert client.get(f"/dashboard/personal?user_id={user.id}&days=31").status_code == 422
+
+
+def test_post_interests_rejects_a_malformed_user_id(db_session):
+    """The UUID guard had no test, and its absence would not have been obvious.
+
+    Deleting the try/except entirely still passed every existing test, because
+    SQLAlchemy's session.get(User, ...) accepts a well-formed UUID *string*
+    transparently -- so the guard only shows its value for input that is not a UUID at
+    all, which nothing supplied. All three shapes belong here: a missing key, a
+    non-string, and a string that is not a UUID.
+    """
+    client = _client(db_session)
+
+    assert client.post("/interests", json={"free_text": "sepsis"}).status_code == 422
+    assert client.post(
+        "/interests", json={"user_id": 12345, "free_text": "sepsis"}
+    ).status_code == 422
+    assert client.post(
+        "/interests", json={"user_id": "not-a-uuid", "free_text": "sepsis"}
+    ).status_code == 422
