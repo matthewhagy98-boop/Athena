@@ -178,11 +178,43 @@ test("the staleness banner appears when the data is older than 36 hours", async 
   await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/data as of/i));
 });
 
+// 48 hours versus fresh brackets the threshold so loosely that ANY value between roughly
+// 1 and 47 satisfies both -- confirmed by mutation. FR-C-011 specifies 36, and that number
+// is the entire content of this component, so it is pinned from both sides.
+test("35 hours old is not yet stale", async () => {
+  handlers({
+    activity: { ...EMPTY_ACTIVITY, computed_at: new Date(Date.now() - 35 * 3_600_000).toISOString() },
+  });
+  renderPage();
+
+  // Waits for the ACTIVITY DATA, not the heading. The heading renders while the query is
+  // still in flight, so asserting the banner's absence after it races the fetch and
+  // passes for any threshold. This line only renders once data has arrived.
+  await waitFor(() =>
+    expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("37 hours old is stale", async () => {
+  handlers({
+    activity: { ...EMPTY_ACTIVITY, computed_at: new Date(Date.now() - 37 * 3_600_000).toISOString() },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/data as of/i));
+});
+
 test("no staleness banner for fresh data", async () => {
   handlers({ activity: { ...EMPTY_ACTIVITY, computed_at: new Date().toISOString() } });
   renderPage();
 
-  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  // Waits for the ACTIVITY DATA, not the heading. The heading renders while the query is
+  // still in flight, so asserting the banner's absence after it races the fetch and
+  // passes for any threshold. This line only renders once data has arrived.
+  await waitFor(() =>
+    expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument(),
+  );
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
 
