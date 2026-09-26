@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 
+import pytest
 from fastapi.testclient import TestClient
 
 from digest.profiles import create_user
@@ -9,6 +10,17 @@ from sqlalchemy import select
 
 from webapp.api import app, get_db
 from webapp.search_index import sync_search_index
+
+
+@pytest.fixture(autouse=True)
+def _dashboard_enabled(monkeypatch):
+    """Every dashboard/interests test in this file predates Task 10's gate and was
+    written against the feature always being on. Enabling it by default here, the same
+    way tests/synthesis/test_service.py's autouse fixture patches _synthesis_enabled,
+    keeps them all exercising real behavior; the handful of tests below that care about
+    the disabled case patch this back to False themselves.
+    """
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: True)
 
 
 def _client(db_session):
@@ -769,6 +781,9 @@ def test_dashboard_routes_do_not_shadow_the_static_mount(db_session):
         "/dashboard/personal",
         '"/interests"',
         "/interests/{topic_id}",
+        # Task 10: /features is a new route added after this test was written, and it
+        # belongs in the same guard as everything else declared before the mount.
+        '"/features"',
     ]:
         assert source.index(route) < mount_at, f"{route} is declared after the static mount"
 
@@ -845,3 +860,111 @@ def test_post_interests_rejects_a_malformed_user_id(db_session):
     assert client.post(
         "/interests", json={"user_id": "not-a-uuid", "free_text": "sepsis"}
     ).status_code == 422
+
+
+# --- Task 10: DASHBOARD_ENABLED gating -------------------------------------------
+
+
+def test_dashboard_activity_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get("/dashboard/activity").status_code == 503
+
+
+def test_dashboard_activity_gate_precedes_parameter_validation(db_session, monkeypatch):
+    # limit=0 is out of range and would 422 on its own. With the flag off it must still
+    # be 503, not 422 -- the brief calls out "two different answers to 'is this
+    # available'" as exactly the failure mode of checking the flag second.
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get("/dashboard/activity?limit=0").status_code == 503
+
+
+def test_dashboard_changes_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get("/dashboard/changes").status_code == 503
+
+
+def test_dashboard_changes_gate_precedes_parameter_validation(db_session, monkeypatch):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get("/dashboard/changes?days=0").status_code == 503
+    assert client.get("/dashboard/changes?limit=0").status_code == 503
+
+
+def test_dashboard_personal_returns_503_when_disabled(db_session, monkeypatch):
+    from digest.profiles import create_anonymous_user
+
+    user = create_anonymous_user(db_session)
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get(f"/dashboard/personal?user_id={user.id}").status_code == 503
+
+
+def test_dashboard_personal_gate_precedes_parameter_and_user_validation(db_session, monkeypatch):
+    # Both an out-of-range `days` and an unknown user_id would otherwise 422/404. With
+    # the flag off, neither of those checks should even run.
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get(f"/dashboard/personal?user_id={uuid.uuid4()}&days=999").status_code == 503
+
+
+def test_post_interests_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    response = client.post(
+        "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "sepsis"}
+    )
+
+    assert response.status_code == 503
+
+
+def test_post_interests_gate_precedes_input_validation(db_session, monkeypatch):
+    # Empty free_text and a malformed user_id would otherwise 422. With the flag off, a
+    # disabled endpoint must not leak its input contract to a caller who cannot use it.
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.post(
+        "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "  "}
+    ).status_code == 503
+    assert client.post(
+        "/interests", json={"user_id": "not-a-uuid", "free_text": "sepsis"}
+    ).status_code == 503
+
+
+def test_delete_interests_returns_503_when_disabled(db_session, monkeypatch):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    response = client.delete(f"/interests/{uuid.uuid4()}?user_id={uuid.uuid4()}")
+
+    assert response.status_code == 503
+
+
+def test_features_endpoint_reports_both_states(db_session, monkeypatch):
+    client = _client(db_session)
+
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: True)
+    assert client.get("/features").json() == {"dashboard_enabled": True}
+
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    assert client.get("/features").json() == {"dashboard_enabled": False}
+
+
+def test_features_endpoint_is_not_gated(db_session, monkeypatch):
+    # A client must be able to ask whether the feature is on even while it is off --
+    # gating this endpoint on itself would make it useless for exactly the case it
+    # exists to serve.
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    assert client.get("/features").status_code == 200

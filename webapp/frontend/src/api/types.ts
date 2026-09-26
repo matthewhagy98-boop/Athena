@@ -184,3 +184,7 @@ export interface PersonalDashboardResponse {
   topics: PersonalTopicRow[];
   blurb: string | null;
 }
+
+export interface FeatureFlags {
+  dashboard_enabled: boolean;
+}

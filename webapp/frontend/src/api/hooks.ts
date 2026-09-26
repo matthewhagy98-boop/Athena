@@ -4,6 +4,7 @@ import type {
   ActivityResponse,
   ChangeFeedResponse,
   CitationHistoryResponse,
+  FeatureFlags,
   PaperCompareResponse,
   PersonalDashboardResponse,
   SavedSearch,
@@ -17,6 +18,10 @@ import type {
   TopicRef,
   VelocityResponse,
 } from "./types";
+
+export function useFeatures() {
+  return useQuery({ queryKey: ["features"], queryFn: () => apiGet<FeatureFlags>("/features") });
+}
 
 export function useTopics() {
   return useQuery({ queryKey: ["topics"], queryFn: () => apiGet<TopicRef[]>("/topics") });

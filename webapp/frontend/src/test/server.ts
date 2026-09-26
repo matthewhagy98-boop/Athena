@@ -42,4 +42,9 @@ export const server = setupServer(
       blurb: null,
     }),
   ),
+  // Task 10: every test that renders <App/> or <IconSidebar/> now also fires a
+  // /features request (App's root redirect, and the sidebar's nav-item gate). Existing
+  // tests predate the flag and were written assuming the dashboard is reachable, so the
+  // default here is enabled; tests exercising the disabled case override it.
+  http.get("/features", () => HttpResponse.json({ dashboard_enabled: true })),
 );
