@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 
 const items = [
+  { to: "/dashboard", icon: "dashboard", label: "Dashboard" },
   { to: "/search", icon: "search", label: "Search" },
   { to: "/compare", icon: "compare_arrows", label: "Compare" },
   { to: "/saved-searches", icon: "bookmark", label: "Saved searches" },

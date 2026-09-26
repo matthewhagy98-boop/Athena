@@ -3,6 +3,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from evidence_engine.db.session import engine
+from scripts.seed_demo_data import DEMO_TOPIC
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +18,9 @@ def reset_leaked_state():
 
       * global scans, e.g. `select_due_users` reading every active user;
       * single-row watermark tables, where a stale `last_synced_at` makes the
-        incremental sync skip the fixtures a test just seeded.
+        incremental sync skip the fixtures a test just seeded;
+      * relative-time-window queries, where a row dated "recently" by one committed
+        script satisfies another test's "last N days" filter.
 
     Only derived or test-generated data is removed. `paper_search_index` and
     `search_index_sync_state` are rebuildable from the source tables by
@@ -45,6 +48,27 @@ def reset_leaked_state():
         # assertions by paper rather than assuming an empty table.
         conn.execute(text("DELETE FROM citation_refresh_state"))
         conn.execute(text("DELETE FROM citation_velocity_cache"))
+        # dashboard_job_state is the same kind of single-row watermark as
+        # citation_refresh_state above, and topic_activity_snapshots is its derived
+        # cache; both are committed by scripts/refresh_dashboard_activity.py and by
+        # scripts/seed_demo_data.py's --run-dashboard-job flag, and both are fully
+        # rebuildable by re-running refresh_activity_snapshots.
+        conn.execute(text("DELETE FROM topic_activity_snapshots"))
+        conn.execute(text("DELETE FROM dashboard_job_state"))
+        # scripts/seed_demo_data.py also commits 9 weeks of ChangeEvent history for
+        # the demo topic, dated relative to "now" so the dashboard has a real
+        # trend_score to demonstrate. Unlike the demo topic's papers (dated by fixed
+        # calendar month, comfortably outside any "last N days" query by the time
+        # this suite runs), those events land inside exactly the kind of recency
+        # window dashboard/changes.py's read_change_feed queries, and would
+        # otherwise make an unrelated test's "the feed is empty" assertion fail for
+        # a reason that has nothing to do with the code under test. The demo topic
+        # itself, its papers, and its scores are left untouched, as before -- only
+        # this one code path's recent-dated rows are cleared.
+        conn.execute(
+            text("DELETE FROM change_events WHERE topic_id IN (SELECT id FROM topics WHERE canonical_label = :label)"),
+            {"label": DEMO_TOPIC},
+        )
     yield
 
 

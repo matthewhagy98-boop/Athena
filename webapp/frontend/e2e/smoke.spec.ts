@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 test("golden path: search → compare → save → run", async ({ page }) => {
+  // The root route now redirects to /dashboard (Task 9); /#/search remains permanently
+  // valid, so this test navigates to it explicitly rather than relying on "/".
   await page.goto("/#/search");
 
   await page.getByPlaceholder("Search papers").fill("neural plasticity");

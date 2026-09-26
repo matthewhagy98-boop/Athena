@@ -24,4 +24,22 @@ export const server = setupServer(
       computed_at: new Date().toISOString(),
     }),
   ),
+  // DashboardPage is now the default route (Task 9), so any test that renders <App/>
+  // triggers these three queries via the sidebar/router even when the test has nothing
+  // to do with the dashboard. Same reasoning as the handlers above: a default empty
+  // response keeps pre-existing tests passing unmodified.
+  http.get("/dashboard/activity", () =>
+    HttpResponse.json({ computed_at: null, window_start: null, window_end: null, topics: [] }),
+  ),
+  http.get("/dashboard/changes", () => HttpResponse.json({ days: [], total_events: 0 })),
+  http.get("/dashboard/personal", () =>
+    HttpResponse.json({
+      has_profile: false,
+      computed_at: null,
+      window_start: null,
+      window_end: null,
+      topics: [],
+      blurb: null,
+    }),
+  ),
 );
