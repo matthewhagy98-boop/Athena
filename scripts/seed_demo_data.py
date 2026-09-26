@@ -20,6 +20,7 @@ from evidence_engine.db.models import (
     Topic,
 )
 from evidence_engine.db.session import SessionLocal
+from webapp.models import SearchIndexSyncState
 from webapp.search_index import sync_search_index
 
 DEMO_TOPIC = "Demo: AI and Cognitive Mapping"
@@ -112,6 +113,73 @@ def _seed_dashboard_history(session: Session, topic: Topic, papers: list[Paper])
     session.flush()
 
 
+def _ensure_papers_indexable(session: Session, topic: Topic, papers: list[Paper]) -> None:
+    """Guarantee every demo paper has a `NEW_PAPER` event, which is what makes it findable.
+
+    `sync_search_index` is purely event-driven: it indexes a paper only when a
+    `NEW_PAPER` or `PAPER_RETRACTED` `ChangeEvent` names it, and it has no path that
+    rebuilds from `papers` directly. So a demo paper with no such event is permanently
+    unsearchable no matter how often this script runs.
+
+    Three things combined to make that happen. `reset_leaked_state` deletes every
+    `change_events` row for the demo topic, taking the first-seed anchors with it. The
+    first-seed branch of `main` is the only place those anchors were created, and it does
+    not run again once the topic exists. And `_seed_dashboard_history`, which does rebuild
+    events every run, walks `papers[n % 4]` against three event types at `[n % 3]` -- a
+    stride that never pairs `PAPERS[1]` with `NEW_PAPER`.
+
+    The visible result was that re-seeding restored three of the four papers and reported
+    success, while `PAPERS[1]` ("Cognitive offloading...") stayed missing -- the one paper
+    `e2e/smoke.spec.ts` selects, so the smoke test timed out after any pytest run and
+    re-running this script could not repair it.
+
+    Dated before the earliest baseline window so these events stay clear of every
+    dashboard recency window: they exist to make the paper findable, not to contribute to
+    the trend. Idempotent -- a paper that already has one gets nothing.
+    """
+    already = set(
+        session.execute(
+            select(ChangeEvent.paper_id).where(
+                ChangeEvent.topic_id == topic.id,
+                ChangeEvent.event_type == ChangeEventType.NEW_PAPER,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    detected_at = window_for(datetime.utcnow(), BASELINE_WINDOWS).start - timedelta(days=2)
+    for paper in papers:
+        if paper.id in already:
+            continue
+        session.add(
+            ChangeEvent(
+                topic_id=topic.id,
+                paper_id=paper.id,
+                event_type=ChangeEventType.NEW_PAPER,
+                detected_at=detected_at,
+            )
+        )
+    session.flush()
+
+
+def _reset_search_index_watermark(session: Session) -> None:
+    """Drop the incremental-sync watermark so the following sync re-examines everything.
+
+    `sync_search_index` only looks at events newer than `last_synced_at`. Without this,
+    an index that has been truncated while its watermark row survived can never be
+    repaired: every event predates the window, so the sync walks an empty event set and
+    reports success over an empty index. Re-examining from the epoch is safe because
+    `_reindex_paper` upserts, and the cost is irrelevant at demo corpus size.
+
+    Scoped to this script on purpose. Giving `sync_search_index` a general full-rebuild
+    entry point is the broader fix for an event-sourced index with no way back from its
+    source tables, but that is a decision about production indexing and does not belong
+    in a demo seeder.
+    """
+    session.execute(delete(SearchIndexSyncState))
+    session.flush()
+
+
 def main(argv: list[str] | None = None) -> None:
     """Converge the database on the demo state.
 
@@ -173,6 +241,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Demo topic {topic.id} already present; search index and dashboard history rebuilt.")
 
         _seed_dashboard_history(session, topic, papers)
+        # After the history rebuild, so its horizon delete cannot remove these, and
+        # before the sync, which is what turns them into index rows.
+        _ensure_papers_indexable(session, topic, papers)
+        _reset_search_index_watermark(session)
         sync_search_index(session)
         session.commit()
 
