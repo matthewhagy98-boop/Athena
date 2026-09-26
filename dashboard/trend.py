@@ -28,6 +28,24 @@ class ScoredTopic:
     is_newly_tracked: bool
 
 
+def _activity_score(event_count: int, baseline: float) -> float:
+    """The scoring formula itself, in one place.
+
+    score_topic and rank_topics both need it -- the first for a topic's real baseline,
+    the second for a newly-tracked topic's provisional one -- and they had independently
+    typed-out copies. That is precisely the drift the provisional-baseline amendment
+    exists to prevent: its whole purpose is keeping scored and newly-tracked topics on
+    ONE scale, which two copies of the arithmetic cannot guarantee.
+
+    Laplace smoothing on both sides removes the division by zero a raw c/b would hit for
+    any topic with a silent baseline -- the common case in a young corpus. Rounded once,
+    at the end, so intermediate precision is not compounded.
+    """
+    activity_ratio = (event_count + 1) / (baseline + 1)
+    volume_weight = math.log10(event_count + 1)
+    return round(activity_ratio * volume_weight, 3)
+
+
 def is_eligible(event_count: int) -> bool:
     return event_count >= MIN_EVENTS
 
@@ -56,14 +74,11 @@ def score_topic(counts: TopicCounts, prior_counts: list[int], weeks_tracked: int
     baseline_mean = sum(prior_counts) / len(prior_counts)
     # Laplace smoothing on both sides: removes the division by zero a raw c/b would hit
     # for any topic with a silent baseline, which is the common case in a young corpus.
-    activity_ratio = (counts.event_count + 1) / (baseline_mean + 1)
-    volume_weight = math.log10(counts.event_count + 1)
-    # Rounded exactly once, at the end, so intermediate precision is not compounded.
     return ScoredTopic(
         counts=counts,
         baseline_mean=baseline_mean,
         baseline_weeks=weeks_tracked,
-        trend_score=round(activity_ratio * volume_weight, 3),
+        trend_score=_activity_score(counts.event_count, baseline_mean),
         is_newly_tracked=False,
     )
 
@@ -92,7 +107,6 @@ def rank_topics(scored: list[ScoredTopic], provisional_baseline: float) -> list[
     def key(topic: ScoredTopic) -> float:
         if topic.trend_score is not None:
             return topic.trend_score
-        count = topic.counts.event_count
-        return round((count + 1) / (provisional_baseline + 1) * math.log10(count + 1), 3)
+        return _activity_score(topic.counts.event_count, provisional_baseline)
 
     return sorted(scored, key=key, reverse=True)

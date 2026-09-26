@@ -11,7 +11,7 @@ const items = [
 ];
 
 export function IconSidebar() {
-  // DASHBOARD_ENABLED (Task 10): a nav item leading to a page whose data all 503s is
+  // DASHBOARD_ENABLED (Task 10): a nav item leading to a page whose data all 404s is
   // worse than no nav item, so the entry is omitted unless the flag resolves true.
   //
   // Fails CLOSED, like the root route. The first draft defaulted to shown while the

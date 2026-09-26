@@ -139,11 +139,35 @@ intent was that setting it to `false` would make the four dashboard endpoints re
 hide the dashboard's sidebar entry, and revert `/` to redirecting to `/#/search` — all
 without a redeploy, in case the dashboard needed to be pulled back after launch.
 
-**As shipped, this flag is not yet wired to any of that.** `dashboard_enabled` is read
-into `Settings` but no code path — not the `/dashboard/*` endpoints in `webapp/api.py`,
-not the `/` redirect or `/dashboard` route in `webapp/frontend/src/App.tsx`, not the nav
-entry in `IconSidebar.tsx` — currently checks it. Toggling the environment variable today
-has no observable effect. Until that wiring is added, the only way to pull the dashboard
-back out of the front door is a code change (revert the redirect and nav entry) and a
-redeploy, not a flag flip. Treat the flag as reserved, not functional, until a task adds
-the checks described above.
+**The flag is wired.** Setting `DASHBOARD_ENABLED=false` (the default) has these effects:
+
+| Surface | With the flag off |
+|---|---|
+| `GET /dashboard/activity`, `/dashboard/changes`, `/dashboard/personal` | `404 Not Found` |
+| `POST /interests`, `DELETE /interests/{topic_id}` | `404 Not Found` |
+| `GET /features` | `200 {"dashboard_enabled": false}` — never gated, because the client has to be able to ask |
+| `/` (root redirect) | continues to `/#/search` |
+| Sidebar | no Dashboard entry |
+| `/#/dashboard` typed directly | still renders; its widgets show their error states |
+
+404 rather than 503, per spec section 20: a disabled dashboard should be
+indistinguishable from a deployment where it was never added. (The synthesis endpoint
+returns 503 for its own flag, which is different — that route is permanently present and
+merely declines to generate.)
+
+The gate is a route-level FastAPI dependency, so it runs before each route's parameter
+validation. That matters: an earlier in-body version let four of the five routes answer
+`422` with the parameter names, locations and types for a caller who could not use them,
+and it opened a database session before refusing.
+
+**Flipping the flag takes effect on an API restart, with no frontend rebuild.** The client
+reads `/features` at runtime, so the redirect and the nav entry follow the backend.
+
+`/#/dashboard` stays routable on purpose. Whoever is verifying the rollout can reach the
+page and see its widgets fail honestly, rather than meeting a 404 that looks like a broken
+deploy.
+
+One thing the flag does NOT stop: `scripts/refresh_dashboard_activity.py` keeps computing
+and writing snapshots while the dashboard is switched off. That is deliberate — the data
+is ready the instant the flag flips — but it means the job's cost and its
+`dashboard_job_state` rows exist before anyone can see a dashboard.

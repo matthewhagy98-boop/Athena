@@ -36,8 +36,15 @@ See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rule
 `/` (and the sidebar's first entry) opens the Trending Dashboard. It is backed by a
 backend feature flag, `DASHBOARD_ENABLED` (`Settings.dashboard_enabled` in
 `evidence_engine/config.py`, default `false` — see `docs/dashboard-metrics.md` for the
-full operator picture, including a note that this flag is not yet wired to any
-frontend or backend gating).
+full operator picture, including the per-surface behaviour table for the flag-off
+state). With it off the dashboard endpoints return 404, `/` keeps redirecting to
+`/#/search`, and the sidebar omits the Dashboard entry. Flipping it takes effect on an
+API restart with no frontend rebuild, because the client reads `/features` at runtime.
+
+Note that the dashboard shows an empty ranking until
+`scripts/refresh_dashboard_activity.py` has run at least once, so an empty widget after
+enabling the flag usually means the job has not run yet rather than that anything is
+broken.
 
 **The "Most active topics" widget shows an empty ranking until the daily job has run at
 least once.** This is expected, not a bug: the dashboard reads whatever the last run of

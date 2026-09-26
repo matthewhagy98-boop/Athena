@@ -658,7 +658,11 @@ def test_dashboard_personal_returns_200_and_no_profile_for_a_fresh_user(db_sessi
     assert body["blurb"] is None
 
 
-def test_dashboard_personal_404s_for_an_unknown_user(db_session):
+def test_dashboard_personal_404s_for_an_unknown_user(db_session, monkeypatch):
+    # Force the gate ON. With DASHBOARD_ENABLED off this route now returns 404
+    # too, so without this the test would pass on the GATE's 404 and assert
+    # nothing about the unknown-user path it is named for.
+    monkeypatch.setattr("webapp.api.dashboard_flags.dashboard_enabled", lambda: True)
     client = _client(db_session)
 
     assert client.get(f"/dashboard/personal?user_id={uuid.uuid4()}").status_code == 404
@@ -711,7 +715,11 @@ def test_post_interests_422s_on_empty_text(db_session):
     assert response.status_code == 422
 
 
-def test_post_interests_404s_for_an_unknown_user(db_session):
+def test_post_interests_404s_for_an_unknown_user(db_session, monkeypatch):
+    # Force the gate ON. With DASHBOARD_ENABLED off this route now returns 404
+    # too, so without this the test would pass on the GATE's 404 and assert
+    # nothing about the unknown-user path it is named for.
+    monkeypatch.setattr("webapp.api.dashboard_flags.dashboard_enabled", lambda: True)
     client = _client(db_session)
 
     response = client.post(
@@ -865,11 +873,11 @@ def test_post_interests_rejects_a_malformed_user_id(db_session):
 # --- Task 10: DASHBOARD_ENABLED gating -------------------------------------------
 
 
-def test_dashboard_activity_returns_503_when_disabled(db_session, monkeypatch):
+def test_dashboard_activity_returns_404_when_disabled(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get("/dashboard/activity").status_code == 503
+    assert client.get("/dashboard/activity").status_code == 404
 
 
 def test_dashboard_activity_gate_precedes_parameter_validation(db_session, monkeypatch):
@@ -879,32 +887,32 @@ def test_dashboard_activity_gate_precedes_parameter_validation(db_session, monke
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get("/dashboard/activity?limit=0").status_code == 503
+    assert client.get("/dashboard/activity?limit=0").status_code == 404
 
 
-def test_dashboard_changes_returns_503_when_disabled(db_session, monkeypatch):
+def test_dashboard_changes_returns_404_when_disabled(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get("/dashboard/changes").status_code == 503
+    assert client.get("/dashboard/changes").status_code == 404
 
 
 def test_dashboard_changes_gate_precedes_parameter_validation(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get("/dashboard/changes?days=0").status_code == 503
-    assert client.get("/dashboard/changes?limit=0").status_code == 503
+    assert client.get("/dashboard/changes?days=0").status_code == 404
+    assert client.get("/dashboard/changes?limit=0").status_code == 404
 
 
-def test_dashboard_personal_returns_503_when_disabled(db_session, monkeypatch):
+def test_dashboard_personal_returns_404_when_disabled(db_session, monkeypatch):
     from digest.profiles import create_anonymous_user
 
     user = create_anonymous_user(db_session)
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get(f"/dashboard/personal?user_id={user.id}").status_code == 503
+    assert client.get(f"/dashboard/personal?user_id={user.id}").status_code == 404
 
 
 def test_dashboard_personal_gate_precedes_parameter_and_user_validation(db_session, monkeypatch):
@@ -913,10 +921,10 @@ def test_dashboard_personal_gate_precedes_parameter_and_user_validation(db_sessi
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
-    assert client.get(f"/dashboard/personal?user_id={uuid.uuid4()}&days=999").status_code == 503
+    assert client.get(f"/dashboard/personal?user_id={uuid.uuid4()}&days=999").status_code == 404
 
 
-def test_post_interests_returns_503_when_disabled(db_session, monkeypatch):
+def test_post_interests_returns_404_when_disabled(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
@@ -924,7 +932,7 @@ def test_post_interests_returns_503_when_disabled(db_session, monkeypatch):
         "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "sepsis"}
     )
 
-    assert response.status_code == 503
+    assert response.status_code == 404
 
 
 def test_post_interests_gate_precedes_input_validation(db_session, monkeypatch):
@@ -935,19 +943,19 @@ def test_post_interests_gate_precedes_input_validation(db_session, monkeypatch):
 
     assert client.post(
         "/interests", json={"user_id": str(uuid.uuid4()), "free_text": "  "}
-    ).status_code == 503
+    ).status_code == 404
     assert client.post(
         "/interests", json={"user_id": "not-a-uuid", "free_text": "sepsis"}
-    ).status_code == 503
+    ).status_code == 404
 
 
-def test_delete_interests_returns_503_when_disabled(db_session, monkeypatch):
+def test_delete_interests_returns_404_when_disabled(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
 
     response = client.delete(f"/interests/{uuid.uuid4()}?user_id={uuid.uuid4()}")
 
-    assert response.status_code == 503
+    assert response.status_code == 404
 
 
 def test_features_endpoint_reports_both_states(db_session, monkeypatch):

@@ -329,35 +329,48 @@ def synthesis_papers_endpoint(payload: dict, db: Session = Depends(get_db)) -> d
     return _synthesis_out(row)
 
 
-def _require_dashboard_enabled() -> None:
-    """503, not 404: the routes exist and will work once enabled -- the same answer
-    /synthesis/papers already gives for the same situation (webapp/api.py's
-    synthesis_papers_endpoint, guarded by synthesis/service.py's _synthesis_enabled).
+def require_dashboard_enabled() -> None:
+    """404, per spec section 20: a disabled dashboard is indistinguishable from a
+    deployment where it was never added.
 
-    Called first in every gated route, before any parameter validation. Checking it
-    after validation would leak the route's input contract to a caller who cannot use
-    it, and would make a disabled endpoint answer 422 for bad input -- two different
-    answers to "is this available".
+    The plan originally said 503, reasoning by analogy with /synthesis/papers. That
+    analogy does not hold: the synthesis route is permanently present and merely declines
+    to generate, whereas this feature is meant to be invisible until it is turned on. 503
+    also advertises the feature's existence to anyone probing, which is the thing the
+    spec's reasoning cares about. The plan contradicted the spec; the spec wins.
+
+    Wired as a route-level `dependencies=[Depends(...)]`, NOT called from the handler
+    body. That distinction is the whole point and the first version got it wrong.
+
+    FastAPI validates a route's declared parameters before the handler body runs, so an
+    in-body check never executes for a route with required params. Measured against the
+    in-body version with the flag off: /dashboard/activity returned 503, but
+    /dashboard/personal with a missing or malformed user_id returned 422, and
+    DELETE /interests likewise for both its path and query params -- four of five routes
+    disclosing parameter names, locations and types to a caller who cannot use the route.
+    The previous docstring claimed the ordering prevented exactly that.
+
+    Decorator dependencies are inserted at the front of the dependant tree, so this runs
+    before the endpoint's own validation -- and before `Depends(get_db)`, so a disabled
+    route no longer opens and closes a database session either.
     """
     if not dashboard_flags.dashboard_enabled():
-        raise HTTPException(status_code=503, detail="Dashboard is not enabled")
+        raise HTTPException(status_code=404, detail="Not Found")
 
 
-@app.get("/dashboard/activity")
+@app.get("/dashboard/activity", dependencies=[Depends(require_dashboard_enabled)])
 def dashboard_activity_endpoint(
     limit: int = Query(default=10), db: Session = Depends(get_db)
 ) -> dict:
-    _require_dashboard_enabled()
     if not 1 <= limit <= 25:
         raise HTTPException(status_code=422, detail="limit must be between 1 and 25")
     return read_current_activity(db, limit=limit)
 
 
-@app.get("/dashboard/changes")
+@app.get("/dashboard/changes", dependencies=[Depends(require_dashboard_enabled)])
 def dashboard_changes_endpoint(
     days: int = Query(default=7), limit: int = Query(default=20), db: Session = Depends(get_db)
 ) -> dict:
-    _require_dashboard_enabled()
     if not 1 <= days <= 30:
         raise HTTPException(status_code=422, detail="days must be between 1 and 30")
     if not 1 <= limit <= 50:
@@ -365,11 +378,10 @@ def dashboard_changes_endpoint(
     return read_change_feed(db, days=days, limit=limit)
 
 
-@app.get("/dashboard/personal")
+@app.get("/dashboard/personal", dependencies=[Depends(require_dashboard_enabled)])
 def dashboard_personal_endpoint(
     user_id: uuid.UUID, days: int = Query(default=7), db: Session = Depends(get_db)
 ) -> dict:
-    _require_dashboard_enabled()
     if not 1 <= days <= 30:
         raise HTTPException(status_code=422, detail="days must be between 1 and 30")
     try:
@@ -393,9 +405,8 @@ def features_endpoint() -> dict:
     return {"dashboard_enabled": dashboard_flags.dashboard_enabled()}
 
 
-@app.post("/interests", status_code=201)
+@app.post("/interests", status_code=201, dependencies=[Depends(require_dashboard_enabled)])
 def add_interest_endpoint(payload: dict, response: Response, db: Session = Depends(get_db)) -> dict:
-    _require_dashboard_enabled()
     raw_user_id = payload.get("user_id")
     try:
         user_id = uuid.UUID(str(raw_user_id))
@@ -420,11 +431,10 @@ def add_interest_endpoint(payload: dict, response: Response, db: Session = Depen
     }
 
 
-@app.delete("/interests/{topic_id}", status_code=204)
+@app.delete("/interests/{topic_id}", status_code=204, dependencies=[Depends(require_dashboard_enabled)])
 def remove_interest_endpoint(
     topic_id: uuid.UUID, user_id: uuid.UUID, db: Session = Depends(get_db)
 ) -> Response:
-    _require_dashboard_enabled()
     try:
         remove_user_interest(db, user_id, topic_id)
     except LookupError as exc:
