@@ -12,12 +12,19 @@ const items = [
 
 export function IconSidebar() {
   // DASHBOARD_ENABLED (Task 10): a nav item leading to a page whose data all 503s is
-  // worse than no nav item, so the entry is omitted once the flag resolves false.
-  // Defaults to shown while the query is still pending -- unlike the root route, a
-  // briefly-visible nav item carries no navigation risk, and the sidebar mounts
-  // instantly on every page, so failing closed here would flash it away on every load.
+  // worse than no nav item, so the entry is omitted unless the flag resolves true.
+  //
+  // Fails CLOSED, like the root route. The first draft defaulted to shown while the
+  // query was pending, to keep a synchronous test passing -- but that is bending the
+  // product to the test. It also briefly advertises a gated feature on every fresh load
+  // of a disabled deployment, which is the one thing the gate exists to prevent.
+  //
+  // The cost is the mirror image: on an enabled deployment the entry appears a moment
+  // after first paint. That happens once per session, not per navigation -- useFeatures
+  // is a cached react-query, so only the first mount is ever pending -- and an entry
+  // arriving late is a smaller wrong than an entry that should not exist at all.
   const { data } = useFeatures();
-  const dashboardEnabled = data?.dashboard_enabled ?? true;
+  const dashboardEnabled = data?.dashboard_enabled ?? false;
   const visibleItems = items.filter((item) => item !== DASHBOARD_ITEM || dashboardEnabled);
 
   // Per DESIGN.md responsive rules: the sidebar becomes a fixed bottom bar on

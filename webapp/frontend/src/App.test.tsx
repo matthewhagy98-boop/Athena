@@ -16,12 +16,17 @@ beforeEach(() => {
   );
 });
 
-test("renders icon sidebar with the four nav destinations", () => {
+test("renders icon sidebar with the four nav destinations", async () => {
+  // Awaits the features query. The Dashboard entry is gated and the sidebar fails
+  // closed, so a synchronous assertion here would race the flag -- and an earlier draft
+  // defaulted the entry to visible while pending purely to keep this test synchronous,
+  // which bent the product to the test.
   render(<App />);
-  expect(screen.getByLabelText("Dashboard")).toBeInTheDocument();
-  expect(screen.getByLabelText("Search")).toBeInTheDocument();
-  expect(screen.getByLabelText("Compare")).toBeInTheDocument();
-  expect(screen.getByLabelText("Saved searches")).toBeInTheDocument();
+
+  await waitFor(() => expect(screen.getByLabelText("Dashboard")).toBeInTheDocument());
+  for (const label of ["Search", "Compare", "Saved searches"]) {
+    expect(screen.getByLabelText(label)).toBeInTheDocument();
+  }
 });
 
 // Task 9: the dashboard is now the front door. This is the regression test for that
@@ -46,10 +51,30 @@ test("/#/search still renders the search page directly", () => {
 
 // Task 10: /#/dashboard must stay routable regardless of the flag -- someone with the
 // link gets the page and its widgets' error states, which is honest.
-test("/#/dashboard still renders the dashboard page directly", () => {
+test("/#/dashboard renders the dashboard page directly", async () => {
   window.location.hash = "#/dashboard";
   render(<App />);
-  expect(screen.getByLabelText("Dashboard")).toHaveAttribute("aria-current", "page");
+
+  // Asserts the PAGE, not the nav item. The previous version checked the nav entry's
+  // aria-current, which conflates routing with nav visibility -- and those deliberately
+  // differ when the flag is off, so it contradicted the "routable either way" rule below.
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: /^dashboard$/i })).toBeInTheDocument(),
+  );
+});
+
+test("/#/dashboard stays routable even with the flag off", async () => {
+  // Someone testing the flag, or holding a direct link, gets the page and its widgets'
+  // error states. Hiding the route would make the gate look like a bug.
+  server.use(http.get("/features", () => HttpResponse.json({ dashboard_enabled: false })));
+  window.location.hash = "#/dashboard";
+  render(<App />);
+
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: /^dashboard$/i })).toBeInTheDocument(),
+  );
+  // ...but the nav entry is still gone, because the two are separate decisions.
+  expect(screen.queryByLabelText("Dashboard")).toBeNull();
 });
 
 // Task 10: with the flag on, "/" still lands on the dashboard, and its nav entry is
@@ -94,6 +119,9 @@ test("while the features query is pending, / renders neither page", () => {
   window.location.hash = "";
   render(<App />);
 
-  expect(screen.queryByLabelText("Search")).not.toHaveAttribute("aria-current", "page");
-  expect(screen.queryByLabelText("Dashboard")).not.toHaveAttribute("aria-current", "page");
+  // The sidebar now fails closed too, so the Dashboard entry is absent rather than
+  // present-but-unselected. Asserting not.toHaveAttribute on a null element passes
+  // vacuously in jest-dom, so absence is asserted directly.
+  expect(screen.queryByLabelText("Dashboard")).toBeNull();
+  expect(screen.getByLabelText("Search")).not.toHaveAttribute("aria-current", "page");
 });
