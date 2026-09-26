@@ -66,10 +66,29 @@ test("cold start renders both global widgets rather than a placeholder", async (
 });
 
 test("a user without a profile sees no personal widget and no error", async () => {
-  handlers();
+  // G-C-1, and the assertion has to survive the personal query RESOLVING. Waiting on the
+  // activity heading is not enough -- it renders on first paint, so the absence check ran
+  // before the personal response arrived and passed even with the has_profile gate
+  // deleted entirely. That is the same racing shape already fixed twice in this file; it
+  // survived here a third time, in the one test named for the constraint.
+  let personalResolved = 0;
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.json(EMPTY_ACTIVITY)),
+    http.get("/dashboard/changes", () => HttpResponse.json(EMPTY_CHANGES)),
+    http.get("/dashboard/personal", () => {
+      personalResolved += 1;
+      return HttpResponse.json(NO_PROFILE);
+    }),
+  );
   renderPage();
 
-  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  await waitFor(() => expect(personalResolved).toBe(1));
+  // Let react-query commit the resolved state before asserting what is NOT on screen.
+  await waitFor(() =>
+    expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument(),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
   expect(screen.queryByText(/your topics/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
 });
@@ -231,4 +250,107 @@ test("the assembled page never uses forbidden copy", async () => {
 
   await waitFor(() => expect(screen.getByText(/your topics/i)).toBeInTheDocument());
   expect(container.textContent).not.toMatch(FORBIDDEN);
+});
+
+
+test("no staleness banner when computed_at is null", async () => {
+  // Six tests in this file use computed_at: null and none asserted the banner's absence,
+  // so removing StalenessBanner's `if (!computedAt) return null` guard passed all of
+  // them. new Date(null).getTime() is 0, not NaN, so the age computes as decades and the
+  // banner would render unconditionally on every cold-start dashboard.
+  handlers();
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("just under 36 hours old is not yet stale", async () => {
+  // Named for what it actually checks. An earlier version of this test was called
+  // "exactly 36 hours" and used 36h-minus-2s, so it never touched the boundary and the
+  // `<=` -> `<` mutation survived it. The true instant cannot be hit without freezing the
+  // clock, because wall time advances between building the fixture and the component
+  // reading Date.now(). That exact-instant case is deliberately left unpinned: the window
+  // is sub-second on a 36-hour threshold, so no user outcome turns on it -- unlike the
+  // threshold VALUE, which 35h/37h do pin.
+  handlers({
+    activity: {
+      ...EMPTY_ACTIVITY,
+      computed_at: new Date(Date.now() - 36 * 3_600_000 + 2_000).toISOString(),
+    },
+  });
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument(),
+  );
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("the day heading is rendered in UTC, not the viewer's zone", async () => {
+  // day.date is a calendar date the backend already grouped in UTC. Letting the browser
+  // reinterpret it locally files events under the previous day for anyone west of UTC --
+  // the same class of bug the Z suffix guards against on the backend. Nothing asserted
+  // the rendered heading at all, so deleting timeZone: "UTC" passed the whole suite.
+  handlers({
+    changes: {
+      days: [
+        {
+          date: "2026-08-01",
+          events: [
+            {
+              event_type: "consensus_updated",
+              detected_at: "2026-08-01T02:00:00Z",
+              topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+              paper: null,
+              evidence_tier: null,
+            },
+          ],
+        },
+      ],
+      total_events: 1,
+    },
+  });
+  renderPage();
+
+  // Expectation computed the same way, but pinned to UTC -- so the assertion is
+  // locale-agnostic while still catching the drop. On a machine at any negative offset,
+  // a component without timeZone: "UTC" renders the PREVIOUS day and this fails.
+  const expected = new Date("2026-08-01T00:00:00Z").toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+  await waitFor(() => expect(screen.getByText(expected)).toBeInTheDocument());
+});
+
+test("a contradiction is visually distinguished, like a retraction", async () => {
+  // WARNING_TYPES holds both, and the comment calls them jointly "the highest-signal
+  // events", but only the retraction half was tested -- dropping contradiction_flagged
+  // from the set passed everything.
+  handlers({
+    changes: {
+      days: [
+        {
+          date: "2026-08-01",
+          events: [
+            {
+              event_type: "contradiction_flagged",
+              detected_at: "2026-08-01T06:00:00Z",
+              topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+              paper: { id: "p1", title: "Conflicting cohort" },
+              evidence_tier: null,
+            },
+          ],
+        },
+      ],
+      total_events: 1,
+    },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText("Contradiction flagged")).toBeInTheDocument());
+  expect(screen.getByText("Contradiction flagged").className).toContain("text-error");
 });
