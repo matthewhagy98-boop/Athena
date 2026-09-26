@@ -3446,6 +3446,115 @@ git commit -m "feat: make the dashboard the landing route"
 
 ---
 
+## Task 10: Wire DASHBOARD_ENABLED
+
+**Added 2026-09-25 after Task 9.** The Global Constraints say "Everything is gated behind
+`DASHBOARD_ENABLED`, default `false`", but no task ever allocated work to implement it:
+`dashboard_enabled` exists in `evidence_engine/config.py` and is read by nothing. Task 9's
+implementer found this and documented it honestly rather than quietly leaving it.
+
+That is a defect in this plan, not in any task's execution. Without it, merging makes the
+dashboard the landing route for every user immediately, and it shows an empty ranking
+until the daily job has run at least once. User decision: wire it before merge.
+
+**Files:**
+- Modify: `dashboard/flags.py` (create), `webapp/api.py`, `webapp/frontend/src/api/types.ts`, `src/api/hooks.ts`, `src/App.tsx`, `src/components/IconSidebar.tsx`
+- Test: `tests/dashboard/test_flags.py` (create), `tests/webapp/test_api.py`, `src/App.test.tsx`
+
+**Interfaces:**
+- Produces: `dashboard.flags.dashboard_enabled() -> bool`; `GET /features`; `useFeatures()`.
+
+The backend half is the real gate — it protects the API regardless of what any client
+does. The frontend half is presentation: it stops the app advertising a feature whose
+endpoints will refuse.
+
+- [ ] **Step 1: Write `dashboard/flags.py`**
+
+```python
+from evidence_engine.config import get_settings
+
+
+def dashboard_enabled() -> bool:
+    """Read at call time, not import time, so a test can monkeypatch the setting.
+
+    Mirrors synthesis/service.py's _synthesis_enabled, which is the established pattern
+    for a feature gate in this codebase.
+    """
+    return get_settings().dashboard_enabled
+```
+
+- [ ] **Step 2: Gate all five routes**
+
+Each of `GET /dashboard/activity`, `/dashboard/changes`, `/dashboard/personal`,
+`POST /interests` and `DELETE /interests/{topic_id}` returns **503** when the flag is off,
+before any other validation:
+
+```python
+    if not dashboard_enabled():
+        raise HTTPException(status_code=503, detail="Dashboard is not enabled")
+```
+
+503 rather than 404: the routes exist and will work once enabled, which is what the
+synthesis endpoint already returns for the same situation.
+
+**The check goes first.** Placing it after parameter validation would leak the routes'
+input contract to a caller who cannot use them, and would make a disabled endpoint return
+422 for bad input — two different answers to "is this available".
+
+- [ ] **Step 3: Add `GET /features`**
+
+```python
+@app.get("/features")
+def features_endpoint() -> dict:
+    """Flags the client needs in order to decide what to render.
+
+    Not gated: a client must be able to ask whether a feature is on. Returns only
+    booleans that are already public in effect -- never secrets, and never anything
+    user-specific, so it stays cacheable and needs no auth.
+    """
+    return {"dashboard_enabled": dashboard_enabled()}
+```
+
+- [ ] **Step 4: Frontend — the type and hook**
+
+`FeatureFlags { dashboard_enabled: boolean }` in `types.ts`; `useFeatures()` in `hooks.ts`
+following the existing `useQuery` conventions.
+
+- [ ] **Step 5: Gate the redirect and the nav**
+
+The root redirect must **fail closed**: while the flag is unknown, do not redirect to the
+dashboard. Render nothing at `/` until it resolves, then navigate. Redirecting to
+`/search` first and correcting afterwards would flash the wrong page for every enabled
+user, and defaulting to the dashboard would show it to disabled ones.
+
+`IconSidebar` omits the Dashboard entry entirely when the flag is off — a nav item leading
+to a page whose data all 503s is worse than no nav item.
+
+`/#/dashboard` itself stays routable either way. Someone with the link gets the page and
+its widgets' error states, which is honest; hiding the route would make the flag look like
+a bug to whoever is testing it.
+
+- [ ] **Step 6: Tests**
+
+Backend: each of the five routes returns 503 with the flag off and its normal status with
+it on; `/features` reports both states. Monkeypatch `dashboard.flags.dashboard_enabled`,
+matching how `tests/synthesis/test_service.py` patches `_synthesis_enabled`.
+
+Frontend: with the flag off, `/` lands on search and no Dashboard nav entry renders; with
+it on, `/` lands on the dashboard and the entry is first. **Assert the disabled case after
+the features query resolves** — this file has produced three racing negative assertions
+already, all of which passed because they checked absence before the state that would
+create it had arrived.
+
+- [ ] **Step 7: Verify and commit**
+
+```bash
+source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest -q
+cd webapp/frontend && npx vitest run && npm run build && npx playwright test
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage.** FR-C-001 → Tasks 4, 7. FR-C-002, FR-C-003 → Task 3, enforced in `trend.py` and asserted there. FR-C-004 → Tasks 3, 8. FR-C-005 → Tasks 5, 7. FR-C-006 → Task 5 (§14.3's exact predicate). FR-C-007 → Task 6 (§14.4's `scalar_one_or_none` rule). FR-C-008 → Task 6. FR-C-009 → Task 4. FR-C-010 → Task 4, with a test that plants an orphan generation. FR-C-011 → Tasks 4, 8 (`StalenessBanner`). FR-C-012 → Task 8. FR-C-013 → Task 6. FR-C-014 → Task 9. FR-C-015, FR-C-016 → Task 8, with a forbidden-copy regex and a tooltip test. FR-C-017 → satisfied by construction: no `dashboard/` module writes to an engine table; the only engine-side change is an additive index in Task 1.
