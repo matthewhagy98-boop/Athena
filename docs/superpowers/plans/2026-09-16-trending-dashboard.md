@@ -3555,6 +3555,87 @@ cd webapp/frontend && npx vitest run && npm run build && npx playwright test
 
 ---
 
+## Task 11: Interest Management UI
+
+**Added 2026-09-26 after the whole-branch review.** `dashboard/interests.py`, both
+`/interests` endpoints and the `useAddInterest`/`useRemoveInterest` hooks are implemented
+and tested, but **no component imports either hook**. There is no affordance anywhere that
+lets a real user add an interest topic, and no other UI path to create an
+`InterestProfile` existed before this sub-project. So `has_profile` is always false,
+and `PersonalTopicsWidget`, the blurb and `personal_topic_summary`'s populated branch can
+never render outside tests.
+
+That is roughly half of C built and unreachable. The spec's component list already names
+`InterestTopicPicker` (section 8), so this is a step the plan omitted rather than new
+scope. User decision: build it before merge.
+
+**Files:**
+- Create: `webapp/frontend/src/components/InterestTopicPicker.tsx`, `InterestTopicPicker.test.tsx`
+- Modify: `src/components/PersonalTopicsWidget.tsx`, `src/pages/DashboardPage.tsx`, `src/pages/DashboardPage.test.tsx`
+
+**Interfaces:**
+- Consumes: `useAddInterest`, `useRemoveInterest`, `useIdentity` (all existing).
+
+- [ ] **Step 1: `InterestTopicPicker`**
+
+A labelled text input and a submit button calling `useAddInterest`. It must handle the
+four states the endpoint can return, because each means something different to the user:
+
+- **201** — added. Clear the input.
+- **200** — already an interest. Say so plainly; do not present it as an error, because
+  nothing went wrong.
+- **404** — unknown user. This is the identity being stale, not the input being bad.
+- **429** — rate limited. Say when to try again. Never reword this as a validation
+  failure; the request was fine and will work later.
+- **422** — the term could not be resolved to a research topic. This is the only one that
+  is about what the user typed.
+
+Disable the control while `isPending`: each submit is an outbound PubMed call, so a
+double-click costs a second one.
+
+- [ ] **Step 2: A remove control on each `PersonalTopicsWidget` row**
+
+Calling `useRemoveInterest`. It must carry an accessible name identifying WHICH topic it
+removes — `aria-label={`Remove ${topic.canonical_label}`}` — or a screen-reader user hears
+a list of identical "Remove" buttons.
+
+- [ ] **Step 3: Mount the picker**
+
+On `DashboardPage`, visible whether or not `has_profile` is true — it is the only way to
+go from no profile to having one, so hiding it behind `has_profile` would make the
+personal dashboard unreachable exactly as it is today.
+
+- [ ] **Step 4: Tests**
+
+Each of the five response states renders its own distinct message; the control is disabled
+while pending; removal calls the hook with the right topic id; the picker is present for a
+user with no profile.
+
+**Every negative assertion must wait for the state that would make the thing appear.**
+This file has produced five racing assertions across Tasks 8 and 10, each found only after
+the previous fix looked complete. `expect(queryBy(...)).not.toHaveAttribute(...)` passes
+vacuously when the query returns null — assert absence directly.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+cd webapp/frontend && npx vitest run && npm run build
+source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest -q
+```
+
+---
+
+## Task 12: Build the change_events index concurrently — DONE (`757b3e1`)
+
+Whole-branch review finding, applied inline. `ix_change_events_detected_at` is on
+`change_events`, an existing engine-owned table written continuously by ingestion; a plain
+`CREATE INDEX` locks it for the whole build. Split into its own non-transactional
+migration (`c41f8a20b7de`) using `CREATE INDEX CONCURRENTLY IF NOT EXISTS`, verified by
+building a scratch database from zero — moving an index between migrations risks fresh
+installs silently losing it, which applying to an already-indexed database cannot detect.
+
+---
+
 ## Self-Review
 
 **Spec coverage.** FR-C-001 → Tasks 4, 7. FR-C-002, FR-C-003 → Task 3, enforced in `trend.py` and asserted there. FR-C-004 → Tasks 3, 8. FR-C-005 → Tasks 5, 7. FR-C-006 → Task 5 (§14.3's exact predicate). FR-C-007 → Task 6 (§14.4's `scalar_one_or_none` rule). FR-C-008 → Task 6. FR-C-009 → Task 4. FR-C-010 → Task 4, with a test that plants an orphan generation. FR-C-011 → Tasks 4, 8 (`StalenessBanner`). FR-C-012 → Task 8. FR-C-013 → Task 6. FR-C-014 → Task 9. FR-C-015, FR-C-016 → Task 8, with a forbidden-copy regex and a tooltip test. FR-C-017 → satisfied by construction: no `dashboard/` module writes to an engine table; the only engine-side change is an additive index in Task 1.
