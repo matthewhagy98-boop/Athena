@@ -20,8 +20,7 @@ from evidence_engine.db.models import (
     Topic,
 )
 from evidence_engine.db.session import SessionLocal
-from webapp.models import SearchIndexSyncState
-from webapp.search_index import sync_search_index
+from webapp.search_index import rebuild_search_index
 
 DEMO_TOPIC = "Demo: AI and Cognitive Mapping"
 
@@ -114,12 +113,18 @@ def _seed_dashboard_history(session: Session, topic: Topic, papers: list[Paper])
 
 
 def _ensure_papers_indexable(session: Session, topic: Topic, papers: list[Paper]) -> None:
-    """Guarantee every demo paper has a `NEW_PAPER` event, which is what makes it findable.
+    """Guarantee every demo paper has a `NEW_PAPER` event.
 
-    `sync_search_index` is purely event-driven: it indexes a paper only when a
-    `NEW_PAPER` or `PAPER_RETRACTED` `ChangeEvent` names it, and it has no path that
-    rebuilds from `papers` directly. So a demo paper with no such event is permanently
-    unsearchable no matter how often this script runs.
+    No longer load-bearing for search: `rebuild_search_index` indexes a paper because it
+    is in `papers`, not because an event names it, so the demo would stay searchable
+    without this. It is kept because the demo corpus should be internally consistent --
+    every demo paper genuinely arrived once -- and because it keeps the demo searchable
+    even if this script is ever pointed back at the incremental `sync_search_index`.
+
+    What it originally fixed, and why the round-robin below still cannot be trusted to do
+    it: `sync_search_index` is purely event-driven, indexing a paper only when a
+    `NEW_PAPER` or `PAPER_RETRACTED` `ChangeEvent` names it, so a demo paper with no such
+    event was permanently unsearchable no matter how often this script ran.
 
     Three things combined to make that happen. `reset_leaked_state` deletes every
     `change_events` row for the demo topic, taking the first-seed anchors with it. The
@@ -159,24 +164,6 @@ def _ensure_papers_indexable(session: Session, topic: Topic, papers: list[Paper]
                 detected_at=detected_at,
             )
         )
-    session.flush()
-
-
-def _reset_search_index_watermark(session: Session) -> None:
-    """Drop the incremental-sync watermark so the following sync re-examines everything.
-
-    `sync_search_index` only looks at events newer than `last_synced_at`. Without this,
-    an index that has been truncated while its watermark row survived can never be
-    repaired: every event predates the window, so the sync walks an empty event set and
-    reports success over an empty index. Re-examining from the epoch is safe because
-    `_reindex_paper` upserts, and the cost is irrelevant at demo corpus size.
-
-    Scoped to this script on purpose. Giving `sync_search_index` a general full-rebuild
-    entry point is the broader fix for an event-sourced index with no way back from its
-    source tables, but that is a decision about production indexing and does not belong
-    in a demo seeder.
-    """
-    session.execute(delete(SearchIndexSyncState))
     session.flush()
 
 
@@ -241,11 +228,12 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Demo topic {topic.id} already present; search index and dashboard history rebuilt.")
 
         _seed_dashboard_history(session, topic, papers)
-        # After the history rebuild, so its horizon delete cannot remove these, and
-        # before the sync, which is what turns them into index rows.
+        # After the history rebuild, so its horizon delete cannot remove these.
         _ensure_papers_indexable(session, topic, papers)
-        _reset_search_index_watermark(session)
-        sync_search_index(session)
+        # A full rebuild from `papers`, not the incremental sync. The incremental sync
+        # cannot repair a truncated index -- and `reset_leaked_state` truncates it after
+        # every test run, which is exactly when this script gets re-run.
+        rebuild_search_index(session)
         session.commit()
 
         if args.run_dashboard_job:

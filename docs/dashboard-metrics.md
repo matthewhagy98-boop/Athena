@@ -118,6 +118,34 @@ least one run was skipped).
 If you see `status = 'failed'`, read `last_error`, fix the underlying cause, and re-run
 the job manually — there is no separate retry mechanism.
 
+## Rebuilding the search index
+
+The search index is event-sourced: `sync_search_index` reindexes a paper only when a
+`NEW_PAPER` or `PAPER_RETRACTED` change event names it, inside the window after
+`search_index_sync_state.last_synced_at`. That makes the scheduled sync cheap, and it
+means the sync **cannot repair the index**. If index rows are lost, no future event names
+those papers again, so they stay unsearchable — and because the watermark keeps advancing,
+the sync walks an empty event set and reports success over the hole.
+
+`rebuild_search_index` is the way back. It reads `papers` directly, so a paper is indexed
+because it exists rather than because something happened to it:
+
+```bash
+arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/python -m scripts.sync_search_index --rebuild
+```
+
+Reach for it when papers are missing from search results but present in `papers`, after
+restoring a backup, or after any migration that touched `paper_search_index`. It is
+O(corpus) and therefore opt-in: the scheduled job must keep running without `--rebuild`.
+
+Two behaviours worth knowing. It leaves the watermark at the time the scan **started**,
+not finished, so a paper created mid-rebuild is still picked up by the next incremental
+sync rather than being stranded behind the watermark. And unlike the incremental sync —
+which skips a failed paper on purpose, since a later event will retry it — a rebuild
+raises if any paper fails and leaves the watermark alone, because a rebuild has no later
+event to fall back on and a partial index reported as success is the exact failure it
+exists to undo.
+
 ## Retention
 
 `refresh_activity_snapshots` prunes old generations after every successful run:
