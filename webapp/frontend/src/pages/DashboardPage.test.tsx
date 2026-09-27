@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import type { ActivityResponse, ChangeFeedResponse, PersonalDashboardResponse } from "../api/types";
@@ -93,6 +93,17 @@ test("a user without a profile sees no personal widget and no error", async () =
   expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
 });
 
+test("the interest topic picker is present even with no profile", async () => {
+  // Task 11: the picker is the only route from no profile to having one, so it must not
+  // be gated behind has_profile the way PersonalTopicsWidget is -- otherwise the personal
+  // dashboard stays exactly as unreachable as it is without it.
+  handlers();
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.getByLabelText(/add a topic to follow/i)).toBeInTheDocument();
+});
+
 test("a user with a profile sees the personal widget and its blurb", async () => {
   handlers({
     personal: {
@@ -115,6 +126,41 @@ test("a user with a profile sees the personal widget and its blurb", async () =>
   expect(screen.getByText(/10 new papers and 2 consensus updates/i)).toBeInTheDocument();
   // FR-C-008: a quiet interest topic is listed with a zero count, not dropped.
   expect(screen.getByText(/no change this week/i)).toBeInTheDocument();
+});
+
+test("removing a topic calls the API with that topic's id and the current user's id", async () => {
+  let deletedPath: string | null = null;
+  let deletedUserId: string | null = null;
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.json(EMPTY_ACTIVITY)),
+    http.get("/dashboard/changes", () => HttpResponse.json(EMPTY_CHANGES)),
+    http.get("/dashboard/personal", () =>
+      HttpResponse.json({
+        ...NO_PROFILE,
+        has_profile: true,
+        topics: [
+          {
+            topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+            event_count: 0,
+            breakdown: { new_paper: 0, consensus_updated: 0, contradiction_flagged: 0, paper_retracted: 0 },
+            latest_event_at: null,
+          },
+        ],
+      }),
+    ),
+    http.delete("/interests/:topicId", ({ params, request }) => {
+      deletedPath = params.topicId as string;
+      deletedUserId = new URL(request.url).searchParams.get("user_id");
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  renderPage();
+
+  const removeButton = await screen.findByRole("button", { name: /remove atrial fibrillation/i });
+  fireEvent.click(removeButton);
+
+  await waitFor(() => expect(deletedPath).toBe("t1"));
+  expect(deletedUserId).toBe("00000000-0000-0000-0000-000000000001");
 });
 
 test("one failing endpoint does not blank the other widgets", async () => {

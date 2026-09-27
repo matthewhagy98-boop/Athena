@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
+import { useRemoveInterest } from "../api/hooks";
 import type { PersonalDashboardResponse } from "../api/types";
+import { useIdentity } from "../identity/identity";
 
 export function PersonalTopicsWidget({
   data,
@@ -10,6 +12,9 @@ export function PersonalTopicsWidget({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const { userId } = useIdentity();
+  const removeInterest = useRemoveInterest();
+
   return (
     <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
       <h2 className="mb-3 text-sm font-semibold text-on-surface">Your topics</h2>
@@ -37,13 +42,27 @@ export function PersonalTopicsWidget({
             >
               {row.topic.canonical_label}
             </Link>
-            <span className="text-on-surface-variant">
-              {/* A quiet topic is listed with a zero count (FR-C-008), not dropped:
-                  dropping it would make the widget look like the user has fewer
-                  interests than they do, and "no change" is itself information. */}
-              {row.event_count === 0
-                ? "No change this week"
-                : `${row.event_count} ${row.event_count === 1 ? "change" : "changes"}`}
+            <span className="flex items-center gap-2">
+              <span className="text-on-surface-variant">
+                {/* A quiet topic is listed with a zero count (FR-C-008), not dropped:
+                    dropping it would make the widget look like the user has fewer
+                    interests than they do, and "no change" is itself information. */}
+                {row.event_count === 0
+                  ? "No change this week"
+                  : `${row.event_count} ${row.event_count === 1 ? "change" : "changes"}`}
+              </span>
+              <button
+                type="button"
+                onClick={() => userId && removeInterest.mutate({ userId, topicId: row.topic.id })}
+                // Names WHICH topic this removes -- without it, a screen-reader user
+                // hears a list of identical "Remove" buttons.
+                aria-label={`Remove ${row.topic.canonical_label}`}
+                className="text-on-surface-variant hover:text-error"
+              >
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  close
+                </span>
+              </button>
             </span>
           </li>
         ))}

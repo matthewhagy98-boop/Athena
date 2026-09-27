@@ -1,6 +1,7 @@
 import { useActivityRanking, useChangeFeed, usePersonalDashboard } from "../api/hooks";
 import { ActivityWidget } from "../components/ActivityWidget";
 import { ChangeFeedWidget } from "../components/ChangeFeedWidget";
+import { InterestTopicPicker } from "../components/InterestTopicPicker";
 import { PersonalTopicsWidget } from "../components/PersonalTopicsWidget";
 import { StalenessBanner } from "../components/StalenessBanner";
 import { useIdentity } from "../identity/identity";
@@ -28,6 +29,13 @@ export function DashboardPage() {
           isLoading={changes.isLoading}
           isError={changes.isError}
         />
+      </div>
+
+      {/* Task 11: the only route from no profile to having one, so it is mounted
+          regardless of has_profile -- gating it the same way as PersonalTopicsWidget
+          below would leave the personal dashboard exactly as unreachable as before. */}
+      <div className="mt-4">
+        <InterestTopicPicker />
       </div>
 
       {/* Mounted only once the user has actually declared interests. Rendering an empty
