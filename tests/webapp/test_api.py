@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from digest.profiles import create_user
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score, StudyType, Topic
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from webapp.api import app, get_db
 from webapp.search_index import sync_search_index
@@ -890,6 +890,42 @@ def test_dashboard_activity_gate_precedes_parameter_validation(db_session, monke
     assert client.get("/dashboard/activity?limit=0").status_code == 404
 
 
+# Inputs FastAPI itself rejects, before any handler body runs. These are the ONLY inputs
+# that can tell a route-level gate from an in-body one, and every case below leaks
+# parameter names, locations and types to a caller who cannot use them.
+#
+# The four `gate_precedes_*` tests above cannot do this job, because every value they
+# send is one FastAPI accepts: the range checks on `limit` and `days` live in the handler
+# bodies, not in `Query(ge=..., le=...)`, so `limit=0` parses fine as an int and an
+# in-body gate would answer 404 too. Reverting the five route-level dependencies to
+# in-body calls left the whole suite green at 57 passed -- the branch's headline fix,
+# which took two review passes to find, was completely unguarded.
+_VALIDATION_REJECTED_BEFORE_ANY_HANDLER_RUNS = [
+    ("GET", "/dashboard/activity?limit=notanint", "query int parse"),
+    ("GET", "/dashboard/changes?days=abc", "query int parse"),
+    ("GET", "/dashboard/personal", "required query param missing"),
+    ("GET", "/dashboard/personal?user_id=not-a-uuid", "query uuid parse"),
+    ("DELETE", "/interests/NOTAUUID?user_id=alsobad", "path uuid parse"),
+]
+
+
+@pytest.mark.parametrize(
+    "method,url,rejected_by", _VALIDATION_REJECTED_BEFORE_ANY_HANDLER_RUNS
+)
+def test_gate_precedes_fastapis_own_validation(db_session, monkeypatch, method, url, rejected_by):
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    response = client.request(method, url)
+
+    assert response.status_code == 404, (
+        f"{rejected_by} leaked {response.status_code}: {response.text[:200]}"
+    )
+    # Not just the status: a 404 carrying a validation body would still disclose the
+    # contract. Must be byte-identical to Starlette's own not-found.
+    assert response.json() == {"detail": "Not Found"}
+
+
 def test_dashboard_changes_returns_404_when_disabled(db_session, monkeypatch):
     monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
     client = _client(db_session)
@@ -976,3 +1012,72 @@ def test_features_endpoint_is_not_gated(db_session, monkeypatch):
     client = _client(db_session)
 
     assert client.get("/features").status_code == 200
+
+
+def test_a_failed_add_still_charges_quota_through_the_real_get_db(db_session, monkeypatch):
+    """The gap every other quota test had: nothing exercised `get_db`'s rollback.
+
+    `_client()` above overrides `get_db` with a generator that neither commits nor rolls
+    back, and `tests/dashboard/test_interests.py` calls `add_user_interest` directly on a
+    session it never rolls back either. So no test in the suite ran the real dependency's
+    `except Exception: session.rollback()` -- and with the charge on the request session,
+    that rollback discarded it.
+
+    The effect was that the counter recorded *successful* adds only. The 422 path, which
+    has already paid for the outbound PubMed term resolution, was free and unlimited on
+    an unauthenticated endpoint -- so the rate limit did not work on the one path it
+    exists to cap. Verified before the fix: five failing adds left zero rows.
+
+    This test therefore deliberately uses the real `get_db` and its own committed user,
+    because the bug lives entirely in the commit/rollback behaviour that the override
+    hides.
+    """
+    from digest.models import User
+    from digest.profiles import create_anonymous_user
+    from evidence_engine.db.session import SessionLocal
+
+    from dashboard.models import DashboardRateWindow
+
+    # The real dependency, not _client's override. monkeypatch restores whatever was
+    # there, so a later test in this file still gets its override back.
+    monkeypatch.delitem(app.dependency_overrides, get_db, raising=False)
+
+    setup = SessionLocal()
+    user = create_anonymous_user(setup)
+    setup.commit()
+    user_id = str(user.id)
+    setup.close()
+
+    def unresolvable(session, free_text):
+        raise ValueError("could not resolve term")
+
+    monkeypatch.setattr("digest.profiles.get_or_create_topic", unresolvable)
+
+    try:
+        client = TestClient(app)
+        codes = [
+            client.post("/interests", json={"user_id": user_id, "free_text": f"zz{i}"}).status_code
+            for i in range(3)
+        ]
+        assert codes == [422, 422, 422]
+
+        check = SessionLocal()
+        charged = check.execute(
+            select(DashboardRateWindow.request_count).where(
+                DashboardRateWindow.subject == f"user:{user_id}"
+            )
+        ).scalar_one_or_none()
+        check.close()
+
+        assert charged == 3, (
+            f"three failed adds charged {charged} instead of 3 -- each one reached the "
+            "provider, so each one must cost its slot"
+        )
+    finally:
+        cleanup = SessionLocal()
+        cleanup.execute(
+            delete(DashboardRateWindow).where(DashboardRateWindow.subject == f"user:{user_id}")
+        )
+        cleanup.execute(delete(User).where(User.id == uuid.UUID(user_id)))
+        cleanup.commit()
+        cleanup.close()

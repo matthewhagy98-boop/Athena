@@ -2,12 +2,14 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from dashboard.models import DashboardRateWindow
 from digest.models import InterestProfile, ProfileTopic, User
 from digest.profiles import add_interest, remove_interest
 from evidence_engine.db.models import Topic
+from evidence_engine.db.session import engine
 
 # POST /interests triggers an outbound PubMed term resolution inside get_or_create_topic,
 # so it is the one C endpoint with an external dependency. Read endpoints are single
@@ -24,34 +26,44 @@ def _hour_start(now: datetime) -> datetime:
     return now.replace(minute=0, second=0, microsecond=0)
 
 
-def _consume_quota(session: Session, user_id: uuid.UUID, now: datetime) -> None:
+def _consume_quota(user_id: uuid.UUID, now: datetime) -> None:
     """Increment this user's counter for the current hour, or refuse.
+
+    Charged on its OWN connection and committed immediately -- deliberately not on the
+    request's session. `webapp.api.get_db` rolls that session back whenever the handler
+    raises, which includes every `HTTPException` this endpoint raises: an unresolvable
+    term, an unknown user, a malformed id. Charging on the request session therefore
+    recorded successful adds only, and left the failure path free and unlimited on an
+    unauthenticated endpoint -- the path that has *already paid* for the outbound PubMed
+    call. Since capping that call is the entire point of the limit, the charge has to
+    outlive the request's fate.
 
     Fixed clock-hour windows rather than a rolling window: one row per user per hour,
     countable with an index, and the imprecision at a boundary is irrelevant for a limit
     whose job is to stop abuse rather than to meter fairly.
+
+    Incremented and read back in a single statement, so two concurrent requests cannot
+    both see 29 and both write 30. A refused request still increments: this is a cost
+    meter, not a balance, and an attacker must not be able to hold the counter at the
+    limit by continuing to send requests that fail.
     """
     window_start = _hour_start(now)
-    subject = f"user:{user_id}"
-    counter = session.execute(
-        select(DashboardRateWindow).where(
-            DashboardRateWindow.subject == subject,
-            DashboardRateWindow.window_start == window_start,
+    statement = (
+        pg_insert(DashboardRateWindow)
+        .values(subject=f"user:{user_id}", window_start=window_start, request_count=1)
+        .on_conflict_do_update(
+            constraint="uq_dashboard_rate_subject_window",
+            set_={"request_count": DashboardRateWindow.request_count + 1},
         )
-    ).scalar_one_or_none()
+        .returning(DashboardRateWindow.request_count)
+    )
+    with engine.begin() as connection:
+        charged = connection.execute(statement).scalar_one()
 
-    if counter is None:
-        counter = DashboardRateWindow(subject=subject, window_start=window_start, request_count=0)
-        session.add(counter)
-        session.flush()
-
-    if counter.request_count >= RATE_LIMIT_PER_HOUR:
+    if charged > RATE_LIMIT_PER_HOUR:
         raise RateLimitExceeded(
             f"Limit of {RATE_LIMIT_PER_HOUR} interest additions per hour reached"
         )
-
-    counter.request_count += 1
-    session.flush()
 
 
 def _require_user(session: Session, user_id: uuid.UUID) -> User:
@@ -83,8 +95,9 @@ def add_user_interest(
         raise ValueError(f"free_text must be {MAX_FREE_TEXT} characters or fewer")
 
     # Charged before the outbound call, so a burst cannot slip through while requests are
-    # in flight.
-    _consume_quota(session, user_id, now or datetime.utcnow())
+    # in flight -- and after the free-text checks above, so a malformed request costs the
+    # caller nothing.
+    _consume_quota(user_id, now or datetime.utcnow())
 
     profile = session.execute(
         select(InterestProfile).where(InterestProfile.user_id == user_id)

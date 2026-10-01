@@ -55,6 +55,12 @@ def reset_leaked_state():
         # rebuildable by re-running refresh_activity_snapshots.
         conn.execute(text("DELETE FROM topic_activity_snapshots"))
         conn.execute(text("DELETE FROM dashboard_job_state"))
+        # dashboard_rate_windows leaks by design: dashboard.interests._consume_quota
+        # commits on its own connection precisely so the charge survives the request
+        # session's rollback, which means a test's charges outlive the test. Left
+        # behind, they accumulate against a fixed clock-hour window and would
+        # eventually make a later test's first add answer 429 for no reason of its own.
+        conn.execute(text("DELETE FROM dashboard_rate_windows"))
         # scripts/seed_demo_data.py also commits 9 weeks of ChangeEvent history for
         # the demo topic, dated relative to "now" so the dashboard has a real
         # trend_score to demonstrate. Unlike the demo topic's papers (dated by fixed
