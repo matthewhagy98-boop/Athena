@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -110,6 +110,14 @@ class ConsensusSnapshot(Base):
 
 class ChangeEvent(Base):
     __tablename__ = "change_events"
+    # Declared here as well as created by migration c41f8a20b7de. The migration builds it
+    # CONCURRENTLY, which cannot run inside a transaction and so cannot be expressed as a
+    # model-only change -- but an index that exists in the database and not in the
+    # metadata is one autogenerate emits a `remove_index` for. Verified: without this
+    # line, `compare_metadata` against a migrated database returns
+    # ('remove_index', Index('ix_change_events_detected_at', ...)), so the next generated
+    # migration would drop the index that c41f8a20b7de exists to add.
+    __table_args__ = (Index("ix_change_events_detected_at", "detected_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     topic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("topics.id"))
