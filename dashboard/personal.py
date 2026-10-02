@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 # activity.py's, and a review found that a swapped entry in one copy could not be
 # detected here. One definition means one place to get it wrong.
 from dashboard.activity import _TYPE_FIELDS, _iso
+from dashboard.windows import WINDOW_DAYS
 from digest.models import InterestProfile, ProfileTopic, User
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Topic
 
@@ -109,7 +110,24 @@ def _plural(count: int, singular: str) -> str:
     return f"{count} {singular}" if count == 1 else f"{count} {singular}s"
 
 
-def render_blurb(summary: dict) -> str | None:
+def _window_phrase(days: int) -> str:
+    """How the blurb refers to its own window.
+
+    `days` reaches the endpoint as anything from 1 to 30, and the sentence used to say
+    "this week" for all of them -- so a caller asking for 30 days was told its three
+    papers arrived "this week", and a caller asking for 1 day was told the same. The
+    counts followed `days` correctly; only the prose did not. FR-C-015 exists to stop the
+    interface overstating what the data says, and this was the one sentence on the surface
+    doing exactly that.
+    """
+    if days == 1:
+        return "in the last 24 hours"
+    if days == 7:
+        return "this week"
+    return f"in the last {days} days"
+
+
+def render_blurb(summary: dict, days: int = WINDOW_DAYS) -> str | None:
     """A deterministic sentence summarising the window. Never LLM-written.
 
     Plan decision (OQ-C-002): this delivers most of the reference design's "blurb" value
@@ -119,6 +137,10 @@ def render_blurb(summary: dict) -> str | None:
     Built with an f-string rather than Jinja2: the template is one sentence with no
     control flow beyond pluralisation, and a template file would put the copy rules
     (FR-C-015) somewhere the tests asserting them do not look.
+
+    `days` must match the window the summary was built over, or the sentence will
+    misdescribe its own numbers. It defaults to WINDOW_DAYS only so the common case reads
+    cleanly; the endpoint passes its own value explicitly.
     """
     if not summary.get("has_profile"):
         return None
@@ -141,12 +163,14 @@ def render_blurb(summary: dict) -> str | None:
     if totals["paper_retracted"]:
         parts.append(_plural(totals["paper_retracted"], "retraction"))
 
+    window = _window_phrase(days)
+
     if not parts:
-        # "No change this week", never "nothing found" or "no results" (FR-C-015).
-        return f"No change in your {topic_phrase} this week."
+        # "No change", never "nothing found" or "no results" (FR-C-015).
+        return f"No change in your {topic_phrase} {window}."
 
     if len(parts) == 1:
         subject = parts[0]
     else:
         subject = ", ".join(parts[:-1]) + f" and {parts[-1]}"
-    return f"{subject} across your {topic_phrase} this week."
+    return f"{subject} across your {topic_phrase} {window}."

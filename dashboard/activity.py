@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Collection
 from datetime import datetime, timedelta
 from statistics import median
 
@@ -51,12 +52,29 @@ def _counts_in_window(session: Session, start: datetime, end: datetime) -> dict:
     return counts
 
 
-def _first_event_at(session: Session) -> dict:
-    """Earliest event per topic, used to decide how many complete weeks it was tracked."""
+def _first_event_at(session: Session, topic_ids: Collection[uuid.UUID]) -> dict:
+    """Earliest event per topic, used to decide how many complete weeks it was tracked.
+
+    Scoped to the topics the caller will actually ask about. This is the one query in the
+    job that cannot be bounded by a window -- "earliest ever" means reading history -- so
+    without a topic filter it was a seq scan over all of `change_events`, growing with the
+    corpus, on every daily run, while holding the job-state row lock. Every other query
+    here rides `ix_change_events_detected_at`; this one has nothing to ride.
+
+    `EXPLAIN` before the filter, on a migrated database:
+        HashAggregate  Group Key: topic_id  ->  Seq Scan on change_events
+
+    The result was only ever consumed for topics that cleared the eligibility threshold,
+    which is a handful per week, so computing it for every topic that has ever had an
+    event was waste rather than caution. The test fixtures have six rows, so nothing in
+    the suite could have surfaced it.
+    """
+    if not topic_ids:
+        return {}
     rows = session.execute(
-        select(ChangeEvent.topic_id, func.min(ChangeEvent.detected_at)).group_by(
-            ChangeEvent.topic_id
-        )
+        select(ChangeEvent.topic_id, func.min(ChangeEvent.detected_at))
+        .where(ChangeEvent.topic_id.in_(topic_ids))
+        .group_by(ChangeEvent.topic_id)
     ).all()
     return {topic_id: first for topic_id, first in rows}
 
@@ -66,8 +84,28 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
 
     The write order is the contract with readers (FR-C-010): rows are written under a
     fresh generation id, and only once every row is in does the watermark advance to it.
-    A run that dies mid-write leaves the previous generation serving, and its orphaned
-    rows are pruned by a later run rather than ever being read.
+    A run that dies mid-write leaves the previous generation serving.
+
+    Where the atomicity actually comes from, since the comment here used to credit the
+    wrong mechanism: the caller holds one transaction across all the snapshot writes and
+    the watermark move, so a run that dies is rolled back whole by the database and there
+    are normally no orphan rows at all. The write-then-publish ordering is belt-and-braces
+    on top of that, not the thing providing it -- worth keeping, because it is what makes
+    the committed `running` marker below safe, but not what saves you.
+
+    The old comment also claimed orphan rows, if any existed, would be "pruned by a later
+    run". They would not: `_prune` is purely age-based, and an orphan carries
+    `computed_at = as_of`, so it would survive every subsequent run until the retention
+    horizon. Confirmed by planting one and running two successful refreshes.
+
+    One deliberate exception to the single transaction: the `running` marker is committed
+    on its own before the work starts, so it can actually be observed. See below.
+
+    Because that commit releases the job-state row lock, two concurrent runs no longer
+    serialise -- previously the second blocked for the whole job with no timeout and no
+    message. They now both proceed and the last to publish wins. That is wasteful rather
+    than wrong: each generation is written and published atomically, and both compute the
+    same window.
     """
     as_of = as_of or datetime.utcnow()
     generation = uuid.uuid4()
@@ -83,11 +121,33 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
     state.running_generation_id = generation
     state.started_at = as_of
     session.flush()
+    # Committed immediately, on its own, before any of the work. `running` is documented
+    # as the operator's in-band signal that a run is in progress and, if it persists, that
+    # a process died without reaching the failure handler. It could not do that job while
+    # it lived only in this uncommitted transaction: no other connection could read it,
+    # and a SIGKILL, OOM kill or container eviction aborted the transaction and reverted
+    # it to `idle` with a stale completed_at -- which is precisely the signature of a
+    # quiet week, the one thing the status is supposed to distinguish it from.
+    #
+    # Safe to publish early because of the generation protocol: `current_generation_id`
+    # has not moved, so readers keep serving the previous generation no matter what
+    # happens next. Committing here does mean a hard-killed run leaves `running` behind
+    # rather than self-clearing -- that is the point. A stuck `running` is diagnosable;
+    # a false `idle` is not.
+    session.commit()
 
     current_counts = _counts_in_window(session, current.start, current.end)
     baselines = baseline_windows(as_of)
     priors = [_counts_in_window(session, w.start, w.end) for w in baselines]
-    first_seen = _first_event_at(session)
+    # Only the eligible topics' first-event dates are ever read, so only those are asked
+    # for. Narrowing this is what keeps the one unbounded-by-window query in the job from
+    # scanning all of change_events every night.
+    eligible_ids = [
+        topic_id
+        for topic_id, bucket in current_counts.items()
+        if is_eligible(bucket["total"])
+    ]
+    first_seen = _first_event_at(session, eligible_ids)
 
     scored = []
     for topic_id, bucket in current_counts.items():
@@ -161,22 +221,29 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
     state.last_error = None
     session.flush()
 
-    _prune(session, generation, as_of)
+    _prune(session, as_of)
     return generation
 
 
-def _prune(session: Session, keep_generation: uuid.UUID, as_of: datetime) -> None:
-    """Drop generations older than the retention horizon.
+def _prune(session: Session, as_of: datetime) -> None:
+    """Drop generations older than the retention horizon. Purely age-based.
 
-    The current generation is exempt regardless of age: a dashboard that stopped being
-    refreshed should keep serving its last good ranking rather than silently emptying.
+    There used to be a `generation_id != keep_generation` clause here, documented as
+    exempting the current generation "regardless of age, so a dashboard that stopped being
+    refreshed keeps serving its last good ranking rather than silently emptying". Both
+    halves of that were wrong, and a mutation proved it: deleting the clause changed
+    nothing, because `_prune` only ever runs at the tail of a successful refresh, where
+    every row just written carries `computed_at = as_of` and so can never be older than
+    `as_of - RETENTION_DAYS`. The clause could not fire.
+
+    The outcome the old comment promised is real, but it comes from somewhere else: a
+    dashboard that stopped being refreshed is never pruned at all, because the sweep only
+    runs inside a refresh. Nothing empties it. `StalenessBanner` is what tells the user
+    the data has gone stale.
     """
     cutoff = as_of - timedelta(days=RETENTION_DAYS)
     session.execute(
-        delete(TopicActivitySnapshot).where(
-            TopicActivitySnapshot.computed_at < cutoff,
-            TopicActivitySnapshot.generation_id != keep_generation,
-        )
+        delete(TopicActivitySnapshot).where(TopicActivitySnapshot.computed_at < cutoff)
     )
     session.flush()
 

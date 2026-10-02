@@ -7,7 +7,9 @@ from dashboard.activity import _iso
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Paper, Score, Topic
 
 
-def read_change_feed(session: Session, days: int, limit: int) -> dict:
+def read_change_feed(
+    session: Session, days: int, limit: int, now: datetime | None = None
+) -> dict:
     """Recent change events, grouped by calendar day, newest first.
 
     `total_events` counts the events in THIS response, after `limit` truncation -- not
@@ -18,8 +20,19 @@ def read_change_feed(session: Session, days: int, limit: int) -> dict:
     or has no paper, or its paper is not retracted. The effect is that a paper later found
     to be retracted stops being advertised as new evidence, while the retraction itself
     stays visible -- which is the event a researcher most needs to see.
+
+    The window is half-open on both ends -- `cutoff < detected_at <= now` -- matching the
+    rest of the sub-project. `now` is injectable so a test can place an event exactly on
+    each boundary; while the clock was read internally, the cutoff comparison was the one
+    half-open boundary on the branch that no test could reach, and mutating `>` to `>=`
+    survived the whole suite.
+
+    The upper bound is deliberate too. Without it a future-dated event -- a clock-skewed
+    ingest, a backfill with a bad date -- would appear in the feed forever, always sorting
+    first, which is the one position in a recency view where a wrong row does most damage.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    now = now or datetime.utcnow()
+    cutoff = now - timedelta(days=days)
 
     rows = session.execute(
         select(ChangeEvent, Topic, Paper, Score)
@@ -28,6 +41,7 @@ def read_change_feed(session: Session, days: int, limit: int) -> dict:
         .outerjoin(Score, Score.paper_id == ChangeEvent.paper_id)
         .where(
             ChangeEvent.detected_at > cutoff,
+            ChangeEvent.detected_at <= now,
             or_(
                 ChangeEvent.event_type == ChangeEventType.PAPER_RETRACTED,
                 ChangeEvent.paper_id.is_(None),

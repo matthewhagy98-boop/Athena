@@ -404,3 +404,17 @@ def test_a_first_event_exactly_on_a_baseline_window_start_counts_that_window(db_
         f"the earliest baseline window's start was not counted"
     )
     assert row["is_newly_tracked"] is False
+
+
+def test_the_documented_retention_horizon_is_one_hundred_and_eighty_days():
+    """The two pruning tests drive the horizon symbolically, through RETENTION_DAYS, so
+    the constant could drift to any value -- 1 day, 10 years -- and both would still pass.
+
+    Same reasoning as test_the_documented_limit_is_thirty_per_hour: a figure that appears
+    in operator documentation (docs/dashboard-metrics.md says 180 days) should not be
+    changeable without something turning red, because changing it changes how much history
+    an operator can go back and audit.
+    """
+    from dashboard.activity import RETENTION_DAYS
+
+    assert RETENTION_DAYS == 180

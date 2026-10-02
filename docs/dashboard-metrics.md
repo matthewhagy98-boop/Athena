@@ -74,8 +74,19 @@ real `trend_score`:
 rankings — the current window plus all eligible topics' scores — and publishes it
 atomically: rows are written under a fresh `generation_id`, and only once every row is
 written does `dashboard_job_state.current_generation_id` advance to point at it. A run
-that dies mid-write leaves the previous generation serving; its orphaned rows are pruned
-by a later successful run, never read.
+that dies mid-write leaves the previous generation serving.
+
+Where that atomicity actually comes from — this used to be described wrongly, in both
+directions. The job runs inside one transaction, committed by
+`scripts/refresh_dashboard_activity.py` at the very end, so a run that dies is rolled back
+whole by the database and normally leaves **no orphan rows at all**. The
+write-then-publish ordering is belt-and-braces on top of that, not the thing providing
+it. And if orphan rows ever did exist, a later run would *not* clean them up: pruning is
+purely age-based, and an orphan carries `computed_at` from its own run, so it would
+survive every subsequent run until the retention horizon.
+
+The one deliberate exception to that single transaction is the `running` marker, which is
+committed on its own before the work starts — see the next section.
 
 ### Running it
 
@@ -97,8 +108,25 @@ so the job records enough state to tell them apart. Check
 | `status`    | Meaning                                                                 |
 |-------------|--------------------------------------------------------------------------|
 | `idle`      | The last run finished successfully. Normal resting state.               |
-| `running`   | A run is in progress. If this persists across multiple expected runs, the process likely died without reaching the failure handler — check for a crashed process rather than trusting this to self-clear. |
+| `running`   | A run is in progress. If this persists across multiple expected runs, the process died without reaching the failure handler — check for a crashed process rather than trusting this to self-clear. |
 | `failed`    | The last run raised an exception. `last_error` holds the exception text (truncated to 2000 characters). |
+
+`running` is only meaningful because the marker is **committed on its own transaction
+before the work starts**. It previously lived inside the job's single uncommitted
+transaction, which made this whole row a lie: no other connection could read it, and a
+SIGKILL, OOM kill or container eviction aborted the transaction and reverted the status to
+`idle` with a stale `completed_at` — the exact signature of a quiet week, which is the one
+thing this table exists to distinguish it from. Committing early is safe because
+`current_generation_id` has not moved yet, so readers keep serving the previous
+generation; the trade-off is that a hard-killed run now leaves `running` behind rather
+than self-clearing, which is the point. A stuck `running` is diagnosable; a false `idle`
+is not.
+
+A consequence worth knowing: because that commit releases the row lock, two concurrent
+runs no longer queue behind each other. Previously a manual run started while the cron
+run was in flight would block for the entire job with no timeout and no message. They now
+both proceed and the last to publish wins — wasteful rather than wrong, since each
+generation is published atomically and both compute the same window.
 
 A **quiet week** — genuinely nothing crossed `MIN_EVENTS` for any topic — is a
 `status = 'idle'` run with `topics_processed = 0` and an empty `topics` array from
@@ -152,18 +180,23 @@ exists to undo.
 `TopicActivitySnapshot` rows older than **180 days** (`RETENTION_DAYS` in
 `dashboard/activity.py`) are deleted, keyed on `computed_at`.
 
-**The current generation is exempt from this regardless of its age.** If the daily job
-stops running entirely — the scheduler is down, the process is broken — the dashboard
-keeps serving its last successful generation indefinitely rather than the retention sweep
-eventually deleting it out from under a still-live query. Retention only ever removes
-*superseded* generations; it never empties the dashboard by itself. (`StalenessBanner`, not
-retention, is what tells the user the data has gone stale.)
+**A dashboard that stops being refreshed never empties itself** — but not for the reason
+this section used to give. There was an "the current generation is exempt regardless of
+age" clause in the code, and it could never fire: `_prune` only ever runs at the tail of a
+*successful* refresh, where every row just written is the same age as the sweep's own
+cutoff calculation. A mutation proved the clause changed nothing, so it has been removed
+along with the explanation that credited it.
+
+The real protection is simpler: the sweep only runs inside a refresh, so if the job stops
+running, the sweep stops too and the last successful generation sits there indefinitely.
+Retention is purely age-based and removes only *superseded* generations.
+(`StalenessBanner`, not retention, is what tells the user the data has gone stale.)
 
 ## The `DASHBOARD_ENABLED` flag
 
 `Settings.dashboard_enabled` (`evidence_engine/config.py`, env var `DASHBOARD_ENABLED`,
 default `false`) was introduced by this sub-project's design as a kill switch: the
-intent was that setting it to `false` would make the four dashboard endpoints return 404,
+intent was that setting it to `false` would make the five gated routes return 404,
 hide the dashboard's sidebar entry, and revert `/` to redirecting to `/#/search` — all
 without a redeploy, in case the dashboard needed to be pulled back after launch.
 

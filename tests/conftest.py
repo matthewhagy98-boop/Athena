@@ -5,6 +5,31 @@ from sqlalchemy.orm import Session
 from evidence_engine.db.session import engine
 from scripts.seed_demo_data import DEMO_TOPIC
 
+# A database this suite is allowed to delete committed rows from. `reset_leaked_state`
+# below is autouse and unconditionally DELETEs from eight tables, including
+# `paper_search_index`, so running `pytest` with a production DATABASE_URL exported --
+# one stale `export` in a shell, one wrong `.env` -- would silently truncate a real
+# deployment's search index before a single test ran. Nothing stopped that.
+#
+# Deliberately an allowlist of name patterns rather than a denylist: the failure mode is
+# someone's real database having a name nobody thought to exclude.
+_DELETABLE_DATABASE_PATTERNS = ("test", "dev", "review_", "verify_", "perf_", "race_", "ci")
+
+
+def _guard_the_database_is_disposable() -> None:
+    name = (engine.url.database or "").lower()
+    if not any(pattern in name for pattern in _DELETABLE_DATABASE_PATTERNS):
+        pytest.exit(
+            f"Refusing to run: DATABASE_URL points at {name!r}, which does not look like a "
+            "test or development database. This suite deletes committed rows from "
+            "paper_search_index, search_index_sync_state, citation_refresh_state, "
+            "citation_velocity_cache, topic_activity_snapshots, dashboard_job_state and "
+            "dashboard_rate_windows before every test. If this database really is "
+            "disposable, add its name pattern to _DELETABLE_DATABASE_PATTERNS in "
+            "tests/conftest.py.",
+            returncode=3,
+        )
+
 
 @pytest.fixture(autouse=True)
 def reset_leaked_state():
@@ -28,6 +53,7 @@ def reset_leaked_state():
     pattern minted by `POST /users/anonymous`, so genuine accounts and any seeded
     demo topics, papers, and scores are left untouched.
     """
+    _guard_the_database_is_disposable()
     anon = "SELECT id FROM users WHERE email LIKE 'anon-%' AND email LIKE '%@no-reply.local'"
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM paper_search_index"))

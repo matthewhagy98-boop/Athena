@@ -287,3 +287,98 @@ def test_the_personal_window_is_half_open_at_both_ends(db_session):
 
     # Exactly window_start is excluded; exactly now is included.
     assert row["event_count"] == 1
+
+
+def _summary(**breakdown):
+    """One topic whose breakdown is exactly what the caller names, rest zero."""
+    full = {"new_paper": 0, "consensus_updated": 0, "contradiction_flagged": 0, "paper_retracted": 0}
+    full.update(breakdown)
+    return {"has_profile": True, "topics": [{"event_count": sum(full.values()), "breakdown": full}]}
+
+
+def test_the_blurb_names_its_own_window_rather_than_always_saying_this_week(db_session):
+    """The sentence used to say "this week" for every `days` from 1 to 30.
+
+    The counts always followed `days` correctly; only the prose did not. So a caller
+    asking for 30 days was told its three papers arrived "this week" -- the exact class of
+    overstatement FR-C-015 exists to forbid, arriving through the one sentence nobody
+    parameterised. Every previous blurb test used the default window or a hand-built dict,
+    so nothing ever rendered a blurb for a non-default `days`.
+    """
+    summary = _summary(new_paper=3)
+
+    assert render_blurb(summary, 7) == "3 new papers across your 1 topic this week."
+    assert render_blurb(summary, 30) == "3 new papers across your 1 topic in the last 30 days."
+    assert render_blurb(summary, 1) == "3 new papers across your 1 topic in the last 24 hours."
+    assert render_blurb(summary, 14) == "3 new papers across your 1 topic in the last 14 days."
+
+
+def test_the_empty_blurb_also_names_its_window(db_session):
+    # The "no change" branch is a separate return and had the same hardcoded phrase.
+    empty = _summary()
+
+    assert render_blurb(empty, 7) == "No change in your 1 topic this week."
+    assert render_blurb(empty, 30) == "No change in your 1 topic in the last 30 days."
+
+
+def test_the_endpoint_blurb_matches_the_window_it_was_asked_for(db_session, monkeypatch):
+    """End to end, because the endpoint is where `days` and the renderer meet.
+
+    render_blurb could take the parameter and the endpoint could still fail to pass it --
+    which is exactly what happened: the signature had no window at all and the call site
+    had `days` sitting in a local variable one line above.
+    """
+    from fastapi.testclient import TestClient
+
+    from webapp.api import app, get_db
+
+    def override_get_db():
+        yield db_session
+
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: True)
+    monkeypatch.setitem(app.dependency_overrides, get_db, override_get_db)
+
+    user = create_anonymous_user(db_session)
+    topic = _topic(db_session, "Windowed topic")
+    profile = InterestProfile(user_id=user.id)
+    db_session.add(profile)
+    db_session.flush()
+    db_session.add(ProfileTopic(profile_id=profile.id, topic_id=topic.id))
+    now = datetime.utcnow()
+    # Inside 30 days but outside 7, so the two windows disagree on the count AND must
+    # disagree on the wording.
+    db_session.add(
+        ChangeEvent(
+            topic_id=topic.id,
+            event_type=ChangeEventType.NEW_PAPER,
+            detected_at=now - timedelta(days=12),
+        )
+    )
+    db_session.flush()
+
+    client = TestClient(app)
+    week = client.get(f"/dashboard/personal?user_id={user.id}&days=7").json()
+    month = client.get(f"/dashboard/personal?user_id={user.id}&days=30").json()
+
+    assert week["blurb"] == "No change in your 1 topic this week."
+    assert month["blurb"] == "1 new paper across your 1 topic in the last 30 days."
+
+
+def test_the_blurb_reports_retractions_and_contradictions(db_session):
+    """Both clauses could be deleted outright and the whole suite still passed.
+
+    Every positive blurb fixture used only new_paper and consensus_updated, so the two
+    clauses that matter most -- a retraction is the single most consequential thing that
+    can happen to a paper, and a flagged contradiction is the reason a reader should look
+    again -- were the two nothing rendered.
+    """
+    assert render_blurb(_summary(paper_retracted=1)) == (
+        "1 retraction across your 1 topic this week."
+    )
+    assert render_blurb(_summary(contradiction_flagged=2)) == (
+        "2 flagged contradictions across your 1 topic this week."
+    )
+    # And in combination, to pin the ordering and the final "and".
+    assert render_blurb(_summary(new_paper=1, contradiction_flagged=1, paper_retracted=1)) == (
+        "1 new paper, 1 flagged contradiction and 1 retraction across your 1 topic this week."
+    )

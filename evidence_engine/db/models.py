@@ -117,7 +117,14 @@ class ChangeEvent(Base):
     # line, `compare_metadata` against a migrated database returns
     # ('remove_index', Index('ix_change_events_detected_at', ...)), so the next generated
     # migration would drop the index that c41f8a20b7de exists to add.
-    __table_args__ = (Index("ix_change_events_detected_at", "detected_at"),)
+    __table_args__ = (
+        Index("ix_change_events_detected_at", "detected_at"),
+        # Serves the per-topic aggregates: dashboard/activity.py::_first_event_at (which
+        # cannot be window-bounded) and dashboard/personal.py's topic_id IN (...) AND
+        # detected_at > start. Built by d8f3b61a04c7. The detected_at-only index above
+        # stays: a composite led by topic_id cannot serve a detected_at-only filter.
+        Index("ix_change_events_topic_id_detected_at", "topic_id", "detected_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     topic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("topics.id"))

@@ -389,8 +389,9 @@ def dashboard_personal_endpoint(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     # The blurb is deterministic and computed here rather than client-side, so the copy
-    # rules live in one tested place.
-    summary["blurb"] = render_blurb(summary)
+    # rules live in one tested place. `days` is passed explicitly: the sentence names its
+    # own window, and without it a 30-day request was described as "this week".
+    summary["blurb"] = render_blurb(summary, days)
     return summary
 
 

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from dashboard.interests import (
+    MAX_FREE_TEXT,
     RATE_LIMIT_PER_HOUR,
     RateLimitExceeded,
     add_user_interest,
@@ -208,3 +209,47 @@ def test_rejected_input_does_not_consume_quota(db_session):
     ).scalar_one_or_none()
 
     assert counter is None or counter.request_count == 0
+
+
+def test_the_documented_free_text_cap_is_two_hundred():
+    """Same reasoning as test_the_documented_limit_is_thirty_per_hour, applied to the
+    constant that did not get it: the other tests drive the cap symbolically, so it could
+    drift to any value and they would all still pass."""
+    assert MAX_FREE_TEXT == 200
+
+
+def test_free_text_is_accepted_at_the_cap_and_rejected_one_character_past_it(db_session):
+    """The cap had zero coverage: raising it to MAX_FREE_TEXT * 100 survived the whole
+    suite. This is the one endpoint that forwards its input to an outbound PubMed term
+    resolution, so an unbounded free_text is a request body someone else has to parse.
+
+    Pinned from both sides, because a test that only sends an over-long string also
+    passes against a cap set far too low.
+    """
+    user = create_anonymous_user(db_session)
+
+    topic, _ = add_user_interest(db_session, user.id, "a" * MAX_FREE_TEXT, now=NOW)
+    assert topic is not None
+
+    with pytest.raises(ValueError, match="characters or fewer"):
+        add_user_interest(db_session, user.id, "a" * (MAX_FREE_TEXT + 1), now=NOW)
+
+
+def test_over_long_free_text_does_not_consume_quota(db_session):
+    """The same property test_rejected_input_does_not_consume_quota pins for blank text.
+    An over-long string never reaches PubMed either, so it must not cost the caller a
+    slot -- otherwise a caller fat-fingering a paste burns their hourly budget on input
+    that cost the provider nothing."""
+    from sqlalchemy import select as _select
+
+    from dashboard.models import DashboardRateWindow
+
+    user = create_anonymous_user(db_session)
+
+    with pytest.raises(ValueError):
+        add_user_interest(db_session, user.id, "a" * (MAX_FREE_TEXT + 1), now=NOW)
+
+    charged = db_session.execute(
+        _select(DashboardRateWindow).where(DashboardRateWindow.subject == f"user:{user.id}")
+    ).scalar_one_or_none()
+    assert charged is None
