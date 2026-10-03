@@ -33,8 +33,11 @@ See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rule
 
 ## Dashboard
 
-`/` (and the sidebar's first entry) opens the Trending Dashboard. It is backed by a
-backend feature flag, `DASHBOARD_ENABLED` (`Settings.dashboard_enabled` in
+`/` (and the sidebar's first entry) opens the Trending Dashboard **when
+`DASHBOARD_ENABLED` is on**. It defaults to `false`, so a fresh checkout and the
+Playwright run both start with the dashboard off — the lead sentence used to claim
+otherwise, which is the sentence a reader acts on. It is backed by a backend feature flag,
+`DASHBOARD_ENABLED` (`Settings.dashboard_enabled` in
 `evidence_engine/config.py`, default `false` — see `docs/dashboard-metrics.md` for the
 full operator picture, including the per-surface behaviour table for the flag-off
 state). With it off the dashboard endpoints return 404, `/` keeps redirecting to

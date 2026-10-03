@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { ActivityResponse } from "../api/types";
 
@@ -16,18 +17,37 @@ export function ActivityWidget({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const [explanationOpen, setExplanationOpen] = useState(false);
+
   return (
     <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-on-surface">Most active topics</h2>
-        <span
-          tabIndex={0}
-          title={EXPLANATION}
+        {/* A real disclosure button, not a `title` on a focusable span. FR-C-016's caveat
+            is the only thing stopping this ranking being read as an editorial judgement
+            about which topics matter, and it was delivered through a tooltip: `title` is
+            not announced reliably by screen readers, is invisible on touch entirely, and
+            a focusable <span> with no role is an a11y anti-pattern. The old test asserted
+            getByTitle, so the attribute was pinned and its reachability was not. */}
+        <button
+          type="button"
+          onClick={() => setExplanationOpen((open) => !open)}
+          aria-expanded={explanationOpen}
+          aria-controls="activity-explanation"
           className="text-xs text-on-surface-variant underline decoration-dotted"
         >
           What does this mean?
-        </span>
+        </button>
       </div>
+
+      {explanationOpen && (
+        <p
+          id="activity-explanation"
+          className="mb-3 rounded bg-surface-container p-2 text-xs leading-relaxed text-on-surface-variant"
+        >
+          {EXPLANATION}
+        </p>
+      )}
 
       {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
       {isError && (

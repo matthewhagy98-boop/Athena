@@ -400,3 +400,132 @@ test("a contradiction is visually distinguished, like a retraction", async () =>
   await waitFor(() => expect(screen.getByText("Contradiction flagged")).toBeInTheDocument());
   expect(screen.getByText("Contradiction flagged").className).toContain("text-error");
 });
+
+
+test("FR-C-012: change-feed and personal-topic rows reach a real destination", async () => {
+  // The requirement is "the dashboard must add no dead ends", and it was enforced on one
+  // of three surfaces. Replacing the <Link> with a <span> in ChangeFeedWidget, and again
+  // in PersonalTopicsWidget, left all 145 tests passing -- because several tests assert
+  // getByText on those rows, and the text is unchanged when the anchor disappears. Both
+  // files carry a comment citing FR-C-012 above the link they did not test.
+  //
+  // Asserting the ROLE rather than the text is the whole point: only a real anchor has
+  // role="link", and only an anchor carries href.
+  server.use(
+    http.get("/dashboard/changes", () =>
+      HttpResponse.json({
+        total_events: 1,
+        days: [
+          {
+            date: "2026-09-19",
+            events: [
+              {
+                id: "e1",
+                event_type: "new_paper",
+                detected_at: "2026-09-19T10:00:00Z",
+                topic: { id: "t9", canonical_label: "GLP-1 receptor agonists" },
+                paper: { id: "p1", title: "A paper", evidence_tier: "established" },
+              },
+            ],
+          },
+        ],
+      }),
+    ),
+    http.get("/dashboard/personal", () =>
+      HttpResponse.json({
+        has_profile: true,
+        computed_at: "2026-09-20T00:00:00Z",
+        window_start: "2026-09-13T00:00:00Z",
+        window_end: "2026-09-20T00:00:00Z",
+        blurb: "1 new paper across your 1 topic this week.",
+        topics: [
+          {
+            topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+            event_count: 1,
+            breakdown: {
+              new_paper: 1,
+              consensus_updated: 0,
+              contradiction_flagged: 0,
+              paper_retracted: 0,
+            },
+            latest_event_at: "2026-09-19T10:00:00Z",
+          },
+        ],
+      }),
+    ),
+  );
+  renderPage();
+
+  const feedLink = await screen.findByRole("link", { name: /glp-1 receptor agonists/i });
+  // Suffix rather than exact: these tests use MemoryRouter while production uses
+  // HashRouter, so the prefix differs ("/topics/t9" vs "#/topics/t9"). What matters is
+  // that it is a real anchor pointing at that topic.
+  expect(feedLink.getAttribute("href")).toMatch(/\/topics\/t9$/);
+
+  const topicLink = await screen.findByRole("link", { name: /atrial fibrillation/i });
+  expect(topicLink.getAttribute("href")).toMatch(/\/topics\/t1$/);
+});
+
+
+test("a failing personal request shows the error, rather than the panel vanishing", async () => {
+  // PersonalTopicsWidget mounted only on `personal.data?.has_profile`, which requires
+  // success -- so its isError branch was dead code. A user who HAS a profile and whose
+  // request fails saw their topic list silently disappear while the other two panels
+  // rendered fine, which is the exact failure the per-widget error surfaces prevent.
+  // The only existing one-endpoint-fails test fails /dashboard/activity.
+  server.use(http.get("/dashboard/personal", () => new HttpResponse(null, { status: 500 })));
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't load your topics/i)).toBeInTheDocument(),
+  );
+  // ...and the rest of the dashboard is genuinely unaffected.
+  expect(screen.queryByText(/couldn't load topic activity/i)).not.toBeInTheDocument();
+});
+
+
+test("the change feed's empty state says no change rather than no results (FR-C-015)", async () => {
+  // EMPTY_CHANGES is the default fixture here and in src/test/server.ts, so almost every
+  // test in this file renders this branch -- and none asserted it produced anything.
+  // Deleting the paragraph entirely left all 145 tests passing.
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/no change recorded in this period/i)).toBeInTheDocument(),
+  );
+  // DashboardPage renders standalone here, with no <main> wrapper.
+  expect(document.body.textContent).not.toMatch(/no results|nothing found/i);
+});
+
+
+test("the personal request is not fired before identity exists", async () => {
+  // `enabled: Boolean(userId)` in usePersonalDashboard. Deleting it fires
+  // /dashboard/personal?user_id=null, which 422s -- turning the ordinary pre-identity
+  // render into an error state, which is exactly what the code comment says the guard is
+  // there to prevent. Nothing tested it.
+  const seen: string[] = [];
+  server.use(
+    http.get("/dashboard/personal", ({ request }) => {
+      seen.push(new URL(request.url).searchParams.get("user_id") ?? "<absent>");
+      return HttpResponse.json(NO_PROFILE);
+    }),
+    http.post("/users/anonymous", () => new Promise(() => {})),  // identity never arrives
+  );
+  // renderPage() seeds identity into localStorage, which is the whole thing under test
+  // here, so this case renders without it.
+  localStorage.removeItem("athena_user_id");
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <IdentityProvider>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </IdentityProvider>
+    </QueryClientProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+
+  expect(seen).toEqual([]);
+});

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ApiError } from "../api/client";
-import { useAddInterest } from "../api/hooks";
+import { useAddInterest, useFeatures } from "../api/hooks";
 import { useIdentity } from "../identity/identity";
 
 type FeedbackTone = "confirmed" | "error";
@@ -16,7 +16,13 @@ interface Feedback {
 // outcome that is actually about what they typed). Collapsing these into one error message
 // would misrepresent at least three of the five.
 export function InterestTopicPicker() {
-  const { userId } = useIdentity();
+  const { userId, error: identityError } = useIdentity();
+  const { data: features } = useFeatures();
+  // Fail closed, matching the sidebar and the root route: only an explicit `true` counts.
+  const dashboardEnabled = features?.dashboard_enabled === true;
+  // Identity is minted by POST /users/anonymous on first visit. While it is in flight,
+  // and permanently if it fails, there is no user to add a topic for.
+  const noIdentityYet = userId === null;
   const [freeText, setFreeText] = useState("");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const addInterest = useAddInterest();
@@ -85,17 +91,39 @@ export function InterestTopicPicker() {
             if (e.key === "Enter") submit();
           }}
           placeholder="e.g. atrial fibrillation"
-          disabled={addInterest.isPending}
+          disabled={addInterest.isPending || noIdentityYet || !dashboardEnabled}
         />
         <button
           type="button"
           onClick={submit}
-          disabled={addInterest.isPending || !freeText.trim()}
+          disabled={addInterest.isPending || !freeText.trim() || noIdentityYet || !dashboardEnabled}
           className="rounded bg-secondary px-3 py-1.5 text-xs font-semibold text-on-secondary disabled:opacity-50"
         >
           {addInterest.isPending ? "Adding…" : "Add"}
         </button>
       </div>
+      {/* Why the control can be inert, said out loud. Previously the button stayed enabled
+          with no identity: the user typed, pressed Add, and absolutely nothing happened --
+          no request, no message, no disabled state. `useIdentity().error` was set on
+          failure and consumed by nothing.
+
+          The flag-off case is separate and needs its own wording. With DASHBOARD_ENABLED
+          off, /#/dashboard stays routable by design and POST /interests returns 404,
+          which the 404 branch below reports as a stale profile and tells the user to
+          reload -- advice that can never work. The two cases are indistinguishable to the
+          client on purpose (that is what the 404 is for), so the picker has to know from
+          /features rather than from the response. */}
+      {!dashboardEnabled && (
+        <p className="mt-2 text-xs text-on-surface-variant" role="status">
+          Following topics isn&apos;t available on this deployment.
+        </p>
+      )}
+      {dashboardEnabled && identityError && (
+        <p className="mt-2 text-xs text-error" role="alert">
+          We couldn&apos;t set up a profile for this browser, so topics can&apos;t be saved.
+        </p>
+      )}
+
       {feedback && (
         <p
           role={feedback.tone === "error" ? "alert" : "status"}

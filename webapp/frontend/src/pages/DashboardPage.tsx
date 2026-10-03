@@ -41,7 +41,13 @@ export function DashboardPage() {
       {/* Mounted only once the user has actually declared interests. Rendering an empty
           "your topics" panel for every first-time visitor would occupy the primary
           content area with a placeholder, which G-C-1 exists to prevent. */}
-      {personal.data?.has_profile && (
+      {/* `|| personal.isError` matters: on error `data` is undefined, so the widget never
+          mounted and its isError branch was dead code. A user who HAS a profile and whose
+          request fails saw their topic list silently vanish while the other two panels
+          rendered fine -- the exact failure the per-widget error surfaces exist to
+          prevent. It also made the documented flag-off contract ("its widgets show their
+          error states") two-thirds true. */}
+      {(personal.data?.has_profile || personal.isError) && (
         <div className="mt-4">
           <PersonalTopicsWidget
             data={personal.data}

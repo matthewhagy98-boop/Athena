@@ -19,8 +19,19 @@ import type {
   VelocityResponse,
 } from "./types";
 
+// `retry: 1` rather than react-query's default of 3. Every gate in the app waits on this
+// query, and isPending stays true across the whole retry sequence with exponential
+// backoff -- so three retries meant roughly seven seconds of blank landing page when
+// /features was down. One retry absorbs a blip; beyond that the app should decide and
+// move on. staleTime keeps a successful answer from being refetched on every remount,
+// since the flag only changes on an API restart.
 export function useFeatures() {
-  return useQuery({ queryKey: ["features"], queryFn: () => apiGet<FeatureFlags>("/features") });
+  return useQuery({
+    queryKey: ["features"],
+    queryFn: () => apiGet<FeatureFlags>("/features"),
+    retry: 1,
+    staleTime: Infinity,
+  });
 }
 
 export function useTopics() {
@@ -162,14 +173,14 @@ export function useSavedSearchVelocity(
 export function useActivityRanking(limit = 10) {
   return useQuery({
     queryKey: ["dashboard", "activity", limit],
-    queryFn: () => apiGet<ActivityResponse>(`/dashboard/activity?limit=${limit}`),
+    queryFn: () => apiGet<ActivityResponse>("/dashboard/activity", { limit }),
   });
 }
 
 export function useChangeFeed(days = 7, limit = 20) {
   return useQuery({
     queryKey: ["dashboard", "changes", days, limit],
-    queryFn: () => apiGet<ChangeFeedResponse>(`/dashboard/changes?days=${days}&limit=${limit}`),
+    queryFn: () => apiGet<ChangeFeedResponse>("/dashboard/changes", { days, limit }),
   });
 }
 
@@ -179,7 +190,7 @@ export function usePersonalDashboard(userId: string | null) {
     // Disabled rather than called with a null id: the endpoint requires user_id and
     // would 422, turning the ordinary pre-identity render into an error state.
     enabled: Boolean(userId),
-    queryFn: () => apiGet<PersonalDashboardResponse>(`/dashboard/personal?user_id=${userId}`),
+    queryFn: () => apiGet<PersonalDashboardResponse>("/dashboard/personal", { user_id: userId }),
   });
 }
 
@@ -199,7 +210,7 @@ export function useRemoveInterest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: { userId: string; topicId: string }) =>
-      apiDelete(`/interests/${input.topicId}?user_id=${input.userId}`),
+      apiDelete(`/interests/${encodeURIComponent(input.topicId)}`, { user_id: input.userId }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dashboard", "personal"] }),
   });
 }

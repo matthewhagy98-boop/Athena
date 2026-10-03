@@ -17,12 +17,26 @@ export const queryClient = new QueryClient();
 // DASHBOARD_ENABLED (Task 10) gates whether "/" lands on the dashboard or on search.
 // This must fail closed: redirecting to /search first and correcting afterwards would
 // flash the wrong page for every enabled user, and defaulting to /dashboard would show
-// it to disabled ones. So while the flag is unknown (query pending), render nothing --
-// `data` stays undefined on error too, which naturally falls back to /search.
+// it to disabled ones. So while the flag is unknown, render nothing.
+//
+// With /features returning 500 this page stayed blank for about seven seconds -- no
+// spinner, no message -- and then redirected. It did fail closed, but seven blank seconds
+// reads as a broken deploy. The cause was react-query's default `retry: 3` with
+// exponential backoff (1s + 2s + 4s), during all of which `isPending` stays true; the fix
+// is `retry: 1` on useFeatures, and the test asserts the resulting budget directly.
+//
+// Note `isPending` alone is the right condition. An earlier version of this fix added
+// `&& !isError`, which a mutation showed to be dead code: in react-query v5 pending and
+// error are mutually exclusive, so by the time isError is true isPending is already false.
+// It read like a safety net and could never fire.
+//
+// `=== true` rather than a truthiness check: the rule here is fail closed, and any truthy
+// non-boolean -- the string "false" from a proxy, a mock, or a future config-driven flags
+// endpoint -- would otherwise open the dashboard.
 function RootRoute() {
   const { data, isPending } = useFeatures();
   if (isPending) return null;
-  return <Navigate to={data?.dashboard_enabled ? "/dashboard" : "/search"} replace />;
+  return <Navigate to={data?.dashboard_enabled === true ? "/dashboard" : "/search"} replace />;
 }
 
 export default function App() {

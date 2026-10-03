@@ -26,8 +26,15 @@ function renderPicker() {
   return render(<InterestTopicPicker />, { wrapper });
 }
 
-function submit(text: string) {
+async function submit(text: string) {
+  // The control is disabled until /features confirms the dashboard is on and identity
+  // exists -- both gates fail closed, so clicking before they resolve does nothing. These
+  // tests used to click immediately and pass only because the button was unconditionally
+  // enabled; waiting here is what makes the click real.
   fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: text } });
+  // Typing alone is not enough: the button is also gated on /features confirming the
+  // dashboard is on and on identity existing, both of which fail closed while pending.
+  await waitFor(() => expect(screen.getByRole("button", { name: /add/i })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: /add/i }));
 }
 
@@ -42,7 +49,7 @@ test("201: added confirms success and clears the input", async () => {
   );
   renderPicker();
 
-  submit("atrial fibrillation");
+  await submit("atrial fibrillation");
 
   await waitFor(() =>
     expect(screen.getByText(/added.*atrial fibrillation/i)).toBeInTheDocument(),
@@ -61,7 +68,7 @@ test("200: already an interest is stated plainly, not as an error", async () => 
   );
   renderPicker();
 
-  submit("atrial fibrillation");
+  await submit("atrial fibrillation");
 
   const message = await screen.findByText(/already one of your topics/i);
   expect(message).not.toHaveAttribute("role", "alert");
@@ -71,7 +78,7 @@ test("404: unknown user is framed as a stale identity, not bad input", async () 
   server.use(http.post("/interests", () => HttpResponse.json({ detail: "not found" }, { status: 404 })));
   renderPicker();
 
-  submit("atrial fibrillation");
+  await submit("atrial fibrillation");
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/profile/i));
 });
@@ -82,7 +89,7 @@ test("429: rate limited tells the user to retry later, never that their input wa
   );
   renderPicker();
 
-  submit("atrial fibrillation");
+  await submit("atrial fibrillation");
 
   // Asserts what is UNIQUE to 429. The first version matched /try again/i, which the
   // generic fallback also says ("Something went wrong adding that topic. Try again.") --
@@ -99,7 +106,7 @@ test("422: an unresolved term is the only outcome described as about what was ty
   server.use(http.post("/interests", () => HttpResponse.json({ detail: "no match" }, { status: 422 })));
   renderPicker();
 
-  submit("zzzzzzzzzz");
+  await submit("zzzzzzzzzz");
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/couldn't match/i));
 });
@@ -116,7 +123,7 @@ test("the five outcomes each render distinct text", async () => {
   for (const [status, body] of cases) {
     server.use(http.post("/interests", () => HttpResponse.json(body, { status })));
     const { unmount } = renderPicker();
-    submit("some term");
+    await submit("some term");
     await waitFor(() => {
       const alerts = screen.queryAllByRole("alert");
       const statuses = screen.queryAllByRole("status");
@@ -144,7 +151,7 @@ test("the control is disabled while the add request is pending, and re-enabled a
   );
   renderPicker();
 
-  submit("atrial fibrillation");
+  await submit("atrial fibrillation");
 
   await waitFor(() => expect(screen.getByRole("button", { name: /add/i })).toBeDisabled());
   expect(screen.getByLabelText(/add a topic to follow/i)).toBeDisabled();
@@ -156,4 +163,52 @@ test("the control is disabled while the add request is pending, and re-enabled a
   // button's label reverting is what actually proves isPending cleared.
   await waitFor(() => expect(screen.getByRole("button", { name: /^add$/i })).toBeInTheDocument());
   expect(screen.getByLabelText(/add a topic to follow/i)).not.toBeDisabled();
+});
+
+
+test("the control is inert-but-explained before identity exists, never silently inert", async () => {
+  // Previously: the button stayed enabled with no identity, so the user typed, pressed
+  // Add, and absolutely nothing happened -- no request, no message, no disabled state.
+  // Reachable on a first visit while POST /users/anonymous is in flight, and permanently
+  // if it fails.
+  let requests = 0;
+  server.use(http.post("/interests", () => {
+    requests += 1;
+    return HttpResponse.json({ topic: { id: "t1", canonical_label: "A" }, created: true }, { status: 201 });
+  }));
+  localStorage.removeItem("athena_user_id");
+  server.use(http.post("/users/anonymous", () => new Promise(() => {})));  // never resolves
+  render(<InterestTopicPicker />, { wrapper });
+
+  fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: "sepsis" } });
+  fireEvent.click(screen.getByRole("button", { name: /add/i }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: /add/i })).toBeDisabled());
+  expect(requests).toBe(0);
+});
+
+test("with the dashboard disabled the picker says so, instead of telling the user to reload", async () => {
+  // /#/dashboard stays routable with the flag off by design, so the picker is reachable
+  // and POST /interests returns 404 -- which the 404 branch reports as a stale profile
+  // and advises reloading. Reloading can never fix it. The two cases are
+  // indistinguishable in the response on purpose, so the picker has to read /features.
+  server.use(http.get("/features", () => HttpResponse.json({ dashboard_enabled: false })));
+  renderPicker();
+
+  await waitFor(() =>
+    expect(screen.getByText(/isn't available on this deployment/i)).toBeInTheDocument(),
+  );
+  expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+  expect(screen.queryByText(/reloading the page/i)).not.toBeInTheDocument();
+});
+
+test("a 500 still says something, rather than re-enabling the button in silence", async () => {
+  // The generic onError fallback had no test: deleting it produced NO feedback at all for
+  // a 5xx, and the five covered cases are 201/200/404/429/422.
+  server.use(http.post("/interests", () => new HttpResponse(null, { status: 500 })));
+  renderPicker();
+
+  await submit("sepsis");
+
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/something went wrong/i));
 });

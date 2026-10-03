@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { ActivityResponse } from "../api/types";
 import { ActivityWidget } from "./ActivityWidget";
@@ -61,13 +61,27 @@ test("every topic row links to its topic detail page", () => {
   );
 });
 
-test("explains that the ranking measures volume, not significance", () => {
+test("explains that the ranking measures volume, not significance, reachably", () => {
   // FR-C-016. Without this the ranking reads as an editorial judgement about which
   // science matters, which is exactly what it is not.
+  //
+  // Asserts the caveat is REACHABLE, not merely present. This used to be getByTitle,
+  // which passed for a `title` attribute on a focusable <span> -- not announced reliably
+  // by screen readers, and invisible on touch. The attribute was pinned; its
+  // reachability was not. Now it is a real disclosure button that reveals real text.
   renderWidget();
 
+  const toggle = screen.getByRole("button", { name: /what does this mean/i });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(
-    screen.getByTitle(/volume of newly indexed and changed evidence/i),
+    screen.queryByText(/volume of newly indexed and changed evidence/i),
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(toggle);
+
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(
+    screen.getByText(/volume of newly indexed and changed evidence/i),
   ).toBeInTheDocument();
 });
 
@@ -84,5 +98,9 @@ test("never uses quality or hype language", () => {
 test("the empty state says no change rather than no results", () => {
   const { container } = renderWidget({ topics: [], computed_at: null });
 
+  // The positive assertion first. Without it this test asserted only an absence, so
+  // deleting the empty-state paragraph entirely satisfied it -- a test that passes when
+  // the thing it is named for does not render at all.
+  expect(screen.getByText(/no topic reached the activity threshold/i)).toBeInTheDocument();
   expect(container.textContent).not.toMatch(/no results|nothing found/i);
 });

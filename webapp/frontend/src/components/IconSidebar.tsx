@@ -24,7 +24,10 @@ export function IconSidebar() {
   // is a cached react-query, so only the first mount is ever pending -- and an entry
   // arriving late is a smaller wrong than an entry that should not exist at all.
   const { data } = useFeatures();
-  const dashboardEnabled = data?.dashboard_enabled ?? false;
+  // `=== true`, not `?? false`: both fail closed on a missing key, but only this one
+  // fails closed on a truthy non-boolean. `{"dashboard_enabled": "false"}` from a proxy,
+  // a mock, or a future config-driven flags endpoint would otherwise show the entry.
+  const dashboardEnabled = data?.dashboard_enabled === true;
   const visibleItems = items.filter((item) => item !== DASHBOARD_ITEM || dashboardEnabled);
 
   // Per DESIGN.md responsive rules: the sidebar becomes a fixed bottom bar on

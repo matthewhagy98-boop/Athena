@@ -125,3 +125,58 @@ test("while the features query is pending, / renders neither page", () => {
   expect(screen.queryByLabelText("Dashboard")).toBeNull();
   expect(screen.getByLabelText("Search")).not.toHaveAttribute("aria-current", "page");
 });
+
+
+test("an erroring /features lands on search promptly, not after the retry sequence", async () => {
+  // RootRoute returned null while `isPending`, and react-query keeps isPending true across
+  // the whole retry sequence -- so with /features down the landing page was blank for
+  // about seven seconds, no spinner and no message, then redirected. It did fail closed,
+  // but seven blank seconds reads as a broken deploy. On error the answer is already
+  // known, so it is given immediately.
+  server.use(http.get("/features", () => new HttpResponse(null, { status: 500 })));
+  window.location.hash = "";
+  const startedAt = Date.now();
+  render(<App />);
+
+  // The budget is the point of the test, so it is asserted rather than implied. With
+  // react-query's default retry: 3 this took about seven seconds; useFeatures now sets
+  // retry: 1, so one backoff then a decision.
+  await waitFor(
+    () => expect(screen.getByLabelText("Search")).toHaveAttribute("aria-current", "page"),
+    { timeout: 6000 },
+  );
+  const elapsed = Date.now() - startedAt;
+  // 2s is chosen to sit between the two policies, not as a round number: react-query's
+  // default retry: 3 backs off 1s + 2s + 4s, so it cannot come in under 2s, while
+  // retry: 1 backs off once and lands near 1s. A looser 4s budget passed under BOTH and
+  // pinned nothing -- found by mutating the retry count back.
+  expect(elapsed).toBeLessThan(2000);
+  expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
+});
+
+
+test("a /features body without the key fails closed at the root route", async () => {
+  // The two existing flag-off tests both serve an explicit {dashboard_enabled: false},
+  // which `?? true` or a truthiness check would leave untouched. Nothing exercised the
+  // root route with a keyless body -- the hole the retry and string-truthiness findings
+  // both sat in.
+  server.use(http.get("/features", () => HttpResponse.json({})));
+  window.location.hash = "";
+  render(<App />);
+
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveAttribute("aria-current", "page"));
+});
+
+
+test('a stringly-typed "false" does not open the dashboard', async () => {
+  // Both gates were truthiness checks, so any truthy non-boolean enabled the dashboard --
+  // and "false" is truthy. Low likelihood against today's typed endpoint, but it is a
+  // one-line fix for a gate whose stated rule is fail closed, and a stringly-typed flag is
+  // exactly what a proxy, a mock, or a config-driven flags endpoint produces.
+  server.use(http.get("/features", () => HttpResponse.json({ dashboard_enabled: "false" })));
+  window.location.hash = "";
+  render(<App />);
+
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveAttribute("aria-current", "page"));
+  expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument();
+});
