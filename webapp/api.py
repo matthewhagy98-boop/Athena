@@ -2,7 +2,9 @@ import uuid
 from collections.abc import Generator
 from datetime import date, datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -356,6 +358,75 @@ def require_dashboard_enabled() -> None:
     """
     if not dashboard_flags.dashboard_enabled():
         raise HTTPException(status_code=404, detail="Not Found")
+
+
+# The five routes the flag hides. `/features` is deliberately absent: the client has to be
+# able to ask whether the dashboard exists, so it is never gated.
+_GATED_PREFIXES = ("/dashboard/", "/interests")
+
+
+def _is_gated_path(path: str) -> bool:
+    return path == "/interests" or path.startswith("/interests/") or path.startswith("/dashboard/")
+
+
+@app.middleware("http")
+async def gate_dashboard_before_the_body_is_read(request: Request, call_next):
+    """The gate, moved in front of request parsing entirely.
+
+    The route-level dependency below precedes every query and path validation, which is
+    what it was written for. It cannot precede body *parsing*: FastAPI reads and
+    JSON-decodes a declared body before it solves dependencies. So `POST /interests` with
+    a malformed body still answered, flag off,
+
+        422 {"detail":[{"type":"json_invalid","loc":["body",1],"msg":"JSON decode error"...
+
+    while every other probe returned 404 -- and since an unrouted path answers 405 from
+    the StaticFiles mount, that 422 was a positive existence signal for the one route the
+    spec wants indistinguishable from never-deployed.
+
+    Middleware runs before routing, so nothing about the request has been interpreted yet.
+    The route dependency stays as well: it is independently tested, it keeps the guarantee
+    local to each route where the next reader will look, and two cheap checks are worth
+    more than one for a kill switch.
+
+    A `bytes` body was tried first and does not work -- FastAPI still JSON-decodes it. An
+    `async def` handler awaiting `request.json()` would work but would put this route's
+    blocking SQLAlchemy calls on the event loop, since every other handler here is sync
+    and runs in the threadpool.
+    """
+    if _is_gated_path(request.url.path) and not dashboard_flags.dashboard_enabled():
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return await call_next(request)
+
+
+def _openapi_without_disabled_routes():
+    """Keep the gated routes out of the published schema while the flag is off.
+
+    `/openapi.json` and `/docs` listed all five routes with every parameter name,
+    location, type and default -- strictly more disclosure than the 422s the gate was
+    written to suppress, and the one thing that made "indistinguishable from a deployment
+    where it was never added" plainly false. Nothing covered it.
+
+    Computed per request rather than cached, because the flag is read at call time
+    everywhere else in this module and a cached schema would answer for the wrong state
+    after a restart-free flip in a test or a reload.
+    """
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    if not dashboard_flags.dashboard_enabled():
+        schema["paths"] = {
+            path: item
+            for path, item in schema.get("paths", {}).items()
+            if not _is_gated_path(path)
+        }
+    return schema
+
+
+app.openapi = _openapi_without_disabled_routes
 
 
 @app.get("/dashboard/activity", dependencies=[Depends(require_dashboard_enabled)])

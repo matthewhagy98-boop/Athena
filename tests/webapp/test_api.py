@@ -1081,3 +1081,70 @@ def test_a_failed_add_still_charges_quota_through_the_real_get_db(db_session, mo
         cleanup.execute(delete(User).where(User.id == uuid.UUID(user_id)))
         cleanup.commit()
         cleanup.close()
+
+
+def test_a_malformed_body_does_not_leak_a_parse_error_when_disabled(db_session, monkeypatch):
+    """The last hole in the gate, and the one a route-level dependency cannot close.
+
+    FastAPI reads and JSON-decodes a declared body before it solves dependencies, so
+    `POST /interests` with a malformed body answered 422 with the full json_invalid
+    detail while every other probe returned 404. Since an unrouted path answers 405 from
+    the StaticFiles mount, that 422 positively confirmed the route exists -- for the one
+    route the spec wants indistinguishable from a deployment that never added it.
+    """
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    response = client.post(
+        "/interests", content=b"{not json", headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}
+
+
+def test_the_openapi_schema_hides_the_gated_routes_when_disabled(db_session, monkeypatch):
+    """`/openapi.json` listed all five routes with every parameter name, location, type
+    and default while the flag was off -- strictly more disclosure than the 422s the gate
+    was written to suppress, and nothing covered it."""
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert [p for p in paths if p.startswith("/dashboard/") or p.startswith("/interests")] == []
+    # /features is never gated: the client has to be able to ask.
+    assert "/features" in paths
+    # And an ungated route is untouched, so this is a filter and not an empty schema.
+    assert "/topics" in paths
+
+
+def test_the_openapi_schema_lists_the_gated_routes_when_enabled(db_session, monkeypatch):
+    """The other half: a filter that hid them unconditionally would also pass the test
+    above, and would break the API docs for everyone once the feature ships."""
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: True)
+    client = _client(db_session)
+
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert sorted(p for p in paths if p.startswith("/dashboard/") or p.startswith("/interests")) == [
+        "/dashboard/activity",
+        "/dashboard/changes",
+        "/dashboard/personal",
+        "/interests",
+        "/interests/{topic_id}",
+    ]
+
+
+def test_normal_validation_is_unaffected_when_enabled(db_session, monkeypatch):
+    """The gate moved in front of request parsing; with the flag ON, parsing and
+    validation must behave exactly as before. A middleware that swallowed requests in
+    both states would pass every disabled-case test in this file."""
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: True)
+    client = _client(db_session)
+
+    assert client.post(
+        "/interests", content=b"{not json", headers={"Content-Type": "application/json"}
+    ).status_code == 422
+    assert client.get("/dashboard/activity?limit=notanint").status_code == 422
+    assert client.get("/dashboard/activity?limit=0").status_code == 422

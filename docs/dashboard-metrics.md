@@ -210,16 +210,31 @@ without a redeploy, in case the dashboard needed to be pulled back after launch.
 | `/` (root redirect) | continues to `/#/search` |
 | Sidebar | no Dashboard entry |
 | `/#/dashboard` typed directly | still renders; its widgets show their error states |
+| `GET /openapi.json`, `/docs` | the five gated routes are absent from the schema |
 
 404 rather than 503, per spec section 20: a disabled dashboard should be
 indistinguishable from a deployment where it was never added. (The synthesis endpoint
 returns 503 for its own flag, which is different — that route is permanently present and
 merely declines to generate.)
 
-The gate is a route-level FastAPI dependency, so it runs before each route's parameter
-validation. That matters: an earlier in-body version let four of the five routes answer
-`422` with the parameter names, locations and types for a caller who could not use them,
-and it opened a database session before refusing.
+The gate is enforced in two places, and it took three attempts to get right.
+
+A route-level FastAPI dependency runs before each route's parameter validation. That
+matters: the original in-body version let four of the five routes answer `422` with the
+parameter names, locations and types for a caller who could not use them, and it opened a
+database session before refusing.
+
+A dependency still cannot precede body *parsing* — FastAPI JSON-decodes a declared body
+before it solves dependencies — so `POST /interests` with a malformed body went on
+answering `422 json_invalid` while every other probe returned 404. An unrouted path
+answers 405 from the StaticFiles mount, so that one 422 positively confirmed the route
+existed. An HTTP middleware now runs in front of routing and answers 404 for the gated
+paths before anything about the request has been interpreted. The route dependency stays
+as well: it is independently tested and keeps the guarantee local to each route.
+
+The published schema is filtered to match. `/openapi.json` and `/docs` previously listed
+all five routes with every parameter name, location, type and default while the flag was
+off — strictly more disclosure than the 422s the gate was written to suppress.
 
 **Flipping the flag takes effect on an API restart, with no frontend rebuild.** The client
 reads `/features` at runtime, so the redirect and the nav entry follow the backend.
