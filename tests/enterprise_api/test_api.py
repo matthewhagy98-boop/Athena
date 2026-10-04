@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from enterprise_api.api import app, get_db
 from enterprise_api.provisioning import create_api_key, create_organization
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier, Paper, PaperTopic, Score, StudyType, Topic
-from webapp.search_index import sync_search_index
+from webapp.search_index import rebuild_search_index
 
 
 def _client(db_session):
@@ -58,7 +58,7 @@ def test_search_endpoint_returns_matching_papers_for_valid_key(db_session):
     db_session.add(topic)
     db_session.flush()
     _seed_paper(db_session, topic, "A study of drug Z")
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     client = _client(db_session)
     response = client.get("/v1/search", params={"q": "drug Z"}, headers={"Authorization": f"Bearer {plaintext_key}"})

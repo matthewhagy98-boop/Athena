@@ -9,7 +9,7 @@ from evidence_engine.db.models import ChangeEvent, ChangeEventType, EvidenceTier
 from sqlalchemy import delete, select
 
 from webapp.api import app, get_db
-from webapp.search_index import sync_search_index
+from webapp.search_index import rebuild_search_index
 
 
 @pytest.fixture(autouse=True)
@@ -47,7 +47,7 @@ def test_search_endpoint_returns_matching_papers(db_session):
     db_session.add(topic)
     db_session.flush()
     paper = _seed_paper(db_session, topic, "A study of drug Z")
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     client = _client(db_session)
     response = client.get("/search", params={"q": "drug Z"})
@@ -77,7 +77,7 @@ def test_search_endpoint_treats_pending_score_as_unscored(db_session):
         ChangeEvent(topic_id=topic.id, paper_id=paper.id, event_type=ChangeEventType.NEW_PAPER, detected_at=datetime(2026, 5, 1))
     )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     client = _client(db_session)
     response = client.get("/search", params={"q": "awaiting scoring"})
@@ -144,7 +144,7 @@ def test_saved_search_crud_and_run_lifecycle(db_session):
     db_session.add(topic)
     db_session.flush()
     _seed_paper(db_session, topic, "A saved-search matching paper")
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     client = _client(db_session)
 
@@ -237,7 +237,7 @@ def test_search_rows_include_topics_abstract_and_study_type(db_session):
     paper = _seed_paper(db_session, topic, "Enrichment study of drug Q")
     paper.abstract = "A detailed abstract about drug Q."
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     client = _client(db_session)
     row = client.get("/search", params={"q": "drug Q"}).json()["rows"][0]

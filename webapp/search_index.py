@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from evidence_engine.db.models import ChangeEvent, ChangeEventType, Paper, PaperTopic, Score
@@ -15,12 +16,37 @@ _REINDEX_TRIGGER_EVENTS = (ChangeEventType.NEW_PAPER, ChangeEventType.PAPER_RETR
 
 
 def _get_or_create_sync_state(session: Session) -> SearchIndexSyncState:
+    """The single watermark row, created on first use.
+
+    The create path is an upsert against the singleton index added in e5a71c8d9f20,
+    rather than the select-then-insert it used to be. That raced: two processes starting
+    sync on a database with no row both selected nothing, both inserted, and from then on
+    every call raised MultipleResultsFound -- search indexing permanently broken until
+    someone deleted a row by hand. Reproduced before fixing; it needs a fresh database and
+    two processes starting together, which is a first deploy or a restored backup
+    reindexed in parallel.
+
+    `ON CONFLICT DO NOTHING` then re-select, rather than catching IntegrityError: a
+    conflict here is the ordinary outcome of a second caller, not an error, and letting
+    the exception escape would abort the caller's transaction.
+
+    The constraint is what prevents the permanent breakage; this upsert only turns a lost
+    run into a clean one. Its cross-session path is not covered by the suite -- that
+    ordering needs two interleaved transactions, which a single test transaction cannot
+    reach -- and was verified by a two-process probe. The test alongside it says so rather
+    than implying coverage it does not have.
+    """
     state = session.execute(select(SearchIndexSyncState)).scalar_one_or_none()
-    if state is None:
-        state = SearchIndexSyncState(last_synced_at=EPOCH)
-        session.add(state)
-        session.flush()
-    return state
+    if state is not None:
+        return state
+
+    session.execute(
+        pg_insert(SearchIndexSyncState)
+        .values(last_synced_at=EPOCH)
+        .on_conflict_do_nothing()
+    )
+    session.flush()
+    return session.execute(select(SearchIndexSyncState)).scalar_one()
 
 
 def _reindex_paper(session: Session, paper_id) -> None:

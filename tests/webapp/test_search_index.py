@@ -1,3 +1,27 @@
+"""Tests for the search index, including the only remaining users of the INCREMENTAL path.
+
+Requires a database no other suite is writing to concurrently, and that is not a
+preference -- three tests here cannot be made robust against it. `sync_search_index`
+windows on a single shared `search_index_sync_state` row, so another process committing a
+watermark advance between a test's event creation and its sync call makes the window
+exclude every event the test just made; the sync then reports success over nothing.
+Measured with a writer advancing the watermark every 20ms: 3 of these fail, and the rest
+of the suite (522 tests) is unaffected.
+
+Attempts that did not work, so nobody repeats them. Owning the row in the test
+transaction (DELETE + INSERT, taking its lock) made things WORSE -- 6 failures instead of
+4 -- because the concurrent writer finds no row (our insert is uncommitted), inserts its
+own, and the test then sees two. The singleton constraint added in e5a71c8d9f20 stops
+that becoming permanent corruption but cannot make the window deterministic.
+
+Everything that only needed "these papers are searchable" was moved off this path instead:
+17 call sites across five files now use `rebuild_search_index`, which reads `papers` and
+consults no watermark. Verified by A/B under the same concurrent writer -- 6 failed before,
+34 passed after.
+
+The project already runs per-session databases for this reason (.superpowers/sdd/c-env.sh).
+"""
+
 from datetime import date, datetime
 from unittest.mock import patch
 
@@ -15,7 +39,13 @@ from evidence_engine.db.models import (
     Topic,
 )
 from webapp.models import PaperSearchIndex, SearchIndexSyncState
-from webapp.search_index import _reindex_paper, rebuild_search_index, sync_search_index
+from webapp.search_index import (
+    EPOCH,
+    _get_or_create_sync_state,
+    _reindex_paper,
+    rebuild_search_index,
+    sync_search_index,
+)
 
 
 def test_sync_search_index_indexes_new_paper_and_advances_watermark(db_session):
@@ -352,3 +382,52 @@ def test_rebuild_raises_and_holds_the_watermark_when_a_paper_fails(db_session):
     assert state.last_synced_at == watermark_before
     assert _is_indexed(db_session, good), "the papers that did succeed are still written"
     assert not _is_indexed(db_session, bad)
+
+
+def test_the_watermark_table_holds_at_most_one_row(db_session):
+    """`_get_or_create_sync_state` reads this table with scalar_one_or_none -- it treats
+    it as a singleton -- and nothing enforced that.
+
+    Two processes starting sync on a database with no watermark row both selected nothing,
+    both inserted, and from then on every call raised MultipleResultsFound: search
+    indexing permanently broken until somebody deleted a row by hand. It needs a fresh
+    database and two processes starting together, which is a first deploy or a restored
+    backup reindexed in parallel. Reproduced before fixing -- two rows, then
+    MultipleResultsFound on the next sync.
+
+    Asserts the database refuses the second row, not just that the Python path avoids it:
+    the upsert in _get_or_create_sync_state relies on this index existing to conflict
+    against, so without the constraint the upsert silently becomes a plain insert.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    _get_or_create_sync_state(db_session)
+
+    with pytest.raises(IntegrityError):
+        with db_session.begin_nested():
+            db_session.add(SearchIndexSyncState(last_synced_at=datetime(2026, 1, 1)))
+            db_session.flush()
+
+
+def test_calling_it_twice_in_one_session_is_idempotent(db_session):
+    """Same-session idempotence only -- and worth being explicit that this is NOT the
+    cross-session race.
+
+    Mutating the upsert back to a plain select-then-insert leaves this passing, because
+    the second call in one session finds the row the first created. The ordering that
+    actually matters -- caller A selects and finds nothing, caller B inserts and commits,
+    then A inserts -- needs two interleaved transactions and is not reachable from a
+    single test transaction. It was verified by a two-process probe instead, and the
+    constraint asserted in the test above is the part that prevents the permanent
+    breakage either way: without the upsert, A gets an IntegrityError and loses one run;
+    without the constraint, A silently creates a duplicate and every later call raises
+    MultipleResultsFound forever.
+    """
+    db_session.execute(delete(SearchIndexSyncState))
+    db_session.flush()
+
+    first = _get_or_create_sync_state(db_session)
+    second = _get_or_create_sync_state(db_session)
+
+    assert first.id == second.id
+    assert db_session.execute(select(SearchIndexSyncState)).scalars().all() == [first]

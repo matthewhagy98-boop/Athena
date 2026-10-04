@@ -59,7 +59,7 @@ def test_run_saved_search_executes_stored_query_and_updates_last_run_at(db_sessi
     db_session.add(PaperTopic(paper_id=paper.id, topic_id=topic.id))
     db_session.flush()
 
-    from webapp.search_index import sync_search_index
+    from webapp.search_index import rebuild_search_index
     from evidence_engine.db.models import ChangeEvent, ChangeEventType
     from datetime import datetime
 
@@ -67,7 +67,7 @@ def test_run_saved_search_executes_stored_query_and_updates_last_run_at(db_sessi
         ChangeEvent(topic_id=topic.id, paper_id=paper.id, event_type=ChangeEventType.NEW_PAPER, detected_at=datetime(2026, 6, 1))
     )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     saved = create_saved_search(db_session, user, "Topic Search", {"topic_id": str(topic.id)})
 
@@ -89,7 +89,7 @@ def test_run_saved_search_raises_when_not_owned_by_user(db_session):
 
 def test_run_saved_search_filters_by_date_range_stored_as_iso_strings(db_session):
     from datetime import date, datetime
-    from webapp.search_index import sync_search_index
+    from webapp.search_index import rebuild_search_index
     from evidence_engine.db.models import ChangeEvent, ChangeEventType
 
     user = create_user(db_session, "date_searcher@example.com")
@@ -134,7 +134,7 @@ def test_run_saved_search_filters_by_date_range_stored_as_iso_strings(db_session
     db_session.flush()
 
     # Sync the search index to pick up both papers
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     # Create a saved search with ISO-format date strings (how they're stored as JSONB)
     # Target range: 2026-02-01 to 2026-03-31
