@@ -1,3 +1,6 @@
+import os
+import re
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -5,30 +8,67 @@ from sqlalchemy.orm import Session
 from evidence_engine.db.session import engine
 from scripts.seed_demo_data import DEMO_TOPIC
 
-# A database this suite is allowed to delete committed rows from. `reset_leaked_state`
-# below is autouse and unconditionally DELETEs from eight tables, including
-# `paper_search_index`, so running `pytest` with a production DATABASE_URL exported --
-# one stale `export` in a shell, one wrong `.env` -- would silently truncate a real
-# deployment's search index before a single test ran. Nothing stopped that.
+# Whether this suite may delete committed rows from the database it is pointed at.
+# `reset_leaked_state` below is autouse and unconditionally DELETEs from eight tables,
+# including `paper_search_index`, so running `pytest` with a production DATABASE_URL
+# exported -- one stale `export` in a shell, one wrong `.env` -- would truncate a real
+# deployment's search index before a single test ran.
 #
-# Deliberately an allowlist of name patterns rather than a denylist: the failure mode is
-# someone's real database having a name nobody thought to exclude.
-_DELETABLE_DATABASE_PATTERNS = ("test", "dev", "review_", "verify_", "perf_", "race_", "ci")
+# The HOST is the load-bearing check, not the name. A production database is reached over
+# the network; a disposable one is on this machine. That is a far stronger signal than any
+# name pattern, because names do not reliably distinguish the two -- this project's own dev
+# database is called `evidence_engine`, which is exactly what a production one would be
+# called too.
+#
+# The name check is secondary and matches whole TOKENS, not substrings. A first version of
+# this guard matched raw substrings including "ci" and "dev", which let through
+# `athena_precision`, `medicine_db`, `athena_decisions`, `specimen_store` and
+# `athena_devices` -- a safety guard that waved through the exact thing it existed to
+# catch. It also refused `evidence_engine`, breaking plain `pytest` for anyone who had not
+# sourced `.superpowers/sdd/c-env.sh`.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+# Named explicitly because their names carry no "this is disposable" signal at all.
+_KNOWN_LOCAL_DATABASES = frozenset({"evidence_engine", "dashboard_dev"})
+_DISPOSABLE_NAME_TOKENS = frozenset({"test", "tests", "dev", "ci", "scratch", "tmp", "local"})
+_DISPOSABLE_NAME_PREFIXES = ("review_", "verify_", "perf_", "race_", "migration_")
+# Escape hatch for a local database whose name this cannot infer. Deliberately an env var
+# rather than another name pattern: setting it is a deliberate act, and widening the
+# patterns is how the first version got dangerous.
+_OVERRIDE_ENV = "ATHENA_TESTS_MAY_DELETE"
+
+
+def _looks_disposable(name: str) -> bool:
+    if name in _KNOWN_LOCAL_DATABASES:
+        return True
+    if name.startswith(_DISPOSABLE_NAME_PREFIXES):
+        return True
+    return bool(_DISPOSABLE_NAME_TOKENS & set(re.split(r"[^a-z0-9]+", name)))
 
 
 def _guard_the_database_is_disposable() -> None:
-    name = (engine.url.database or "").lower()
-    if not any(pattern in name for pattern in _DELETABLE_DATABASE_PATTERNS):
-        pytest.exit(
-            f"Refusing to run: DATABASE_URL points at {name!r}, which does not look like a "
-            "test or development database. This suite deletes committed rows from "
-            "paper_search_index, search_index_sync_state, citation_refresh_state, "
-            "citation_velocity_cache, topic_activity_snapshots, dashboard_job_state and "
-            "dashboard_rate_windows before every test. If this database really is "
-            "disposable, add its name pattern to _DELETABLE_DATABASE_PATTERNS in "
-            "tests/conftest.py.",
-            returncode=3,
-        )
+    if os.environ.get(_OVERRIDE_ENV) == "1":
+        return
+
+    url = engine.url
+    name = (url.database or "").lower()
+    host = (url.host or "").lower()
+
+    if host not in _LOCAL_HOSTS:
+        reason = f"host {host!r} is not this machine"
+    elif not _looks_disposable(name):
+        reason = f"database {name!r} does not look disposable"
+    else:
+        return
+
+    pytest.exit(
+        f"Refusing to run: {reason}. This suite DELETEs committed rows from "
+        "paper_search_index, search_index_sync_state, citation_refresh_state, "
+        "citation_velocity_cache, topic_activity_snapshots, dashboard_job_state and "
+        "dashboard_rate_windows before every single test, so pointing it at a real "
+        f"deployment destroys data. DATABASE_URL = {url.render_as_string(hide_password=True)}. "
+        f"If this really is disposable, set {_OVERRIDE_ENV}=1.",
+        returncode=3,
+    )
 
 
 @pytest.fixture(autouse=True)
