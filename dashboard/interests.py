@@ -9,7 +9,6 @@ from dashboard.models import DashboardRateWindow
 from digest.models import InterestProfile, ProfileTopic, User
 from digest.profiles import add_interest, remove_interest
 from evidence_engine.db.models import Topic
-from evidence_engine.db.session import engine
 
 # POST /interests triggers an outbound PubMed term resolution inside get_or_create_topic,
 # so it is the one C endpoint with an external dependency. Read endpoints are single
@@ -26,17 +25,31 @@ def _hour_start(now: datetime) -> datetime:
     return now.replace(minute=0, second=0, microsecond=0)
 
 
-def _consume_quota(user_id: uuid.UUID, now: datetime) -> None:
+def _consume_quota(session: Session, user_id: uuid.UUID, now: datetime) -> None:
     """Increment this user's counter for the current hour, or refuse.
 
-    Charged on its OWN connection and committed immediately -- deliberately not on the
-    request's session. `webapp.api.get_db` rolls that session back whenever the handler
-    raises, which includes every `HTTPException` this endpoint raises: an unresolvable
-    term, an unknown user, a malformed id. Charging on the request session therefore
-    recorded successful adds only, and left the failure path free and unlimited on an
-    unauthenticated endpoint -- the path that has *already paid* for the outbound PubMed
-    call. Since capping that call is the entire point of the limit, the charge has to
-    outlive the request's fate.
+    Charged on the REQUEST'S session and committed immediately. Both halves matter.
+
+    Committed, because `webapp.api.get_db` rolls the session back whenever the handler
+    raises -- which is every `HTTPException` this endpoint raises, including the ordinary
+    unresolvable-term 422. A merely flushed charge was discarded with it, so the counter
+    recorded successful adds only and the failure path was free and unlimited on an
+    unauthenticated endpoint. That is the path that has *already paid* for the outbound
+    PubMed call, and capping that call is the entire point of the limit.
+
+    On the request's session rather than a second connection, because the second
+    connection deadlocked the pool. The pool ceiling is 15 (pool_size 5 + max_overflow
+    10); `get_db` holds one for the whole request, so asking `engine.begin()` for another
+    meant each in-flight request needed two. Measured with 15 request-shaped workers
+    released from a barrier: 15 of 15 raised TimeoutError -- total mutual deadlock,
+    cleared only by the 30s pool_timeout. 15 concurrent requests on any endpoint plus one
+    POST /interests was enough to hang the API, from an unauthenticated caller. Every test
+    is single-threaded, so nothing in the suite could see it.
+
+    An intermediate commit on the request session is safe HERE specifically: everything
+    before this point in `add_user_interest` is reads and validation, so the commit has
+    nothing else to publish. A caller that starts writing before the charge would be
+    committing that work early, so keep this call where it is.
 
     Fixed clock-hour windows rather than a rolling window: one row per user per hour,
     countable with an index, and the imprecision at a boundary is irrelevant for a limit
@@ -57,8 +70,8 @@ def _consume_quota(user_id: uuid.UUID, now: datetime) -> None:
         )
         .returning(DashboardRateWindow.request_count)
     )
-    with engine.begin() as connection:
-        charged = connection.execute(statement).scalar_one()
+    charged = session.execute(statement).scalar_one()
+    session.commit()
 
     if charged > RATE_LIMIT_PER_HOUR:
         raise RateLimitExceeded(
@@ -97,7 +110,7 @@ def add_user_interest(
     # Charged before the outbound call, so a burst cannot slip through while requests are
     # in flight -- and after the free-text checks above, so a malformed request costs the
     # caller nothing.
-    _consume_quota(user_id, now or datetime.utcnow())
+    _consume_quota(session, user_id, now or datetime.utcnow())
 
     profile = session.execute(
         select(InterestProfile).where(InterestProfile.user_id == user_id)
