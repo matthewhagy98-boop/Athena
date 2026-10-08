@@ -40,14 +40,19 @@ export function ActivityWidget({
         </button>
       </div>
 
-      {explanationOpen && (
-        <p
-          id="activity-explanation"
-          className="mb-3 rounded bg-surface-container p-2 text-xs leading-relaxed text-on-surface-variant"
-        >
-          {EXPLANATION}
-        </p>
-      )}
+      {/* Always rendered, hidden when collapsed, rather than conditionally mounted.
+          `aria-controls` is an IDREF: with the paragraph unmounted the id did not exist in
+          the default state, so the attribute pointed at nothing (axe
+          aria-valid-attr-value). A `title` anti-pattern had been swapped for a real
+          pattern that was wired up only half the time. `hidden` keeps it out of the
+          accessibility tree and out of layout while the id stays resolvable. */}
+      <p
+        id="activity-explanation"
+        hidden={!explanationOpen}
+        className="mb-3 rounded bg-surface-container p-2 text-xs leading-relaxed text-on-surface-variant"
+      >
+        {EXPLANATION}
+      </p>
 
       {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
       {isError && (

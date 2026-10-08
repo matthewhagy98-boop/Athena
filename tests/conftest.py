@@ -27,6 +27,10 @@ from scripts.seed_demo_data import DEMO_TOPIC
 # catch. It also refused `evidence_engine`, breaking plain `pytest` for anyone who had not
 # sourced `.superpowers/sdd/c-env.sh`.
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+# Unix-socket directories that can only reach a server on this machine. A socket path is
+# NOT automatically local: `?host=/cloudsql/project:region:instance` is a Cloud SQL proxy
+# socket to a database in someone's cloud.
+_LOCAL_SOCKET_PREFIXES = ("/tmp", "/private/tmp", "/var/run/postgresql", "/run/postgresql")
 # Named explicitly because their names carry no "this is disposable" signal at all.
 _KNOWN_LOCAL_DATABASES = frozenset({"evidence_engine", "dashboard_dev"})
 _DISPOSABLE_NAME_TOKENS = frozenset({"test", "tests", "dev", "ci", "scratch", "tmp", "local"})
@@ -45,16 +49,40 @@ def _looks_disposable(name: str) -> bool:
     return bool(_DISPOSABLE_NAME_TOKENS & set(re.split(r"[^a-z0-9]+", name)))
 
 
-def _guard_the_database_is_disposable() -> None:
-    if os.environ.get(_OVERRIDE_ENV) == "1":
-        return
+def _effective_host(url) -> str:
+    """The host libpq will actually connect to.
 
+    `url.host` is NOT it. libpq accepts the host as a query parameter, and SQLAlchemy
+    leaves `url.host` as None in that form -- which the first version of this guard read as
+    the empty string and therefore as local. So
+    `postgresql://u:p@/evidence_engine?host=db.prod.internal` -- a remote production
+    database with an allowlisted name -- was ALLOWED. Verified before fixing.
+    """
+    query_host = url.query.get("host")
+    if isinstance(query_host, (tuple, list)):  # libpq permits a repeated key
+        query_host = query_host[0] if query_host else None
+    return str(query_host or url.host or "").lower()
+
+
+def _is_local_host(host: str) -> bool:
+    if host.startswith("/"):
+        return host.startswith(_LOCAL_SOCKET_PREFIXES)
+    return host in _LOCAL_HOSTS
+
+
+def _guard_the_database_is_disposable() -> None:
     url = engine.url
     name = (url.database or "").lower()
-    host = (url.host or "").lower()
+    host = _effective_host(url)
 
-    if host not in _LOCAL_HOSTS:
+    # The host check is NOT waivable. The override exists for a local database whose name
+    # this cannot infer; it must not also wave through a remote one, or it reinstates
+    # exactly the "one stale export" threat this guard was written for -- with the export
+    # now being the override itself, which someone may well leave set in their shell.
+    if not _is_local_host(host):
         reason = f"host {host!r} is not this machine"
+    elif os.environ.get(_OVERRIDE_ENV) == "1":
+        return
     elif not _looks_disposable(name):
         reason = f"database {name!r} does not look disposable"
     else:
@@ -66,7 +94,8 @@ def _guard_the_database_is_disposable() -> None:
         "citation_velocity_cache, topic_activity_snapshots, dashboard_job_state and "
         "dashboard_rate_windows before every single test, so pointing it at a real "
         f"deployment destroys data. DATABASE_URL = {url.render_as_string(hide_password=True)}. "
-        f"If this really is disposable, set {_OVERRIDE_ENV}=1.",
+        f"If this really is a disposable LOCAL database, set {_OVERRIDE_ENV}=1 -- "
+        "which waives the name check but never the host check.",
         returncode=3,
     )
 

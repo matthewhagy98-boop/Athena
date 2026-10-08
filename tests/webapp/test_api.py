@@ -1148,3 +1148,62 @@ def test_normal_validation_is_unaffected_when_enabled(db_session, monkeypatch):
     ).status_code == 422
     assert client.get("/dashboard/activity?limit=notanint").status_code == 422
     assert client.get("/dashboard/activity?limit=0").status_code == 422
+
+
+def test_every_gated_route_carries_the_dependency_as_well_as_the_middleware():
+    """Defence in depth, asserted structurally, because behaviour cannot distinguish it.
+
+    The gate is enforced twice: an HTTP middleware in front of routing, and a route-level
+    dependency on each of the five routes. Either alone produces the same 404s, so no
+    behavioural test can tell whether both are present -- and in fact deleting all five
+    dependencies left the whole suite at 549 passed, while neutering the middleware left
+    the five discriminating-input tests passing. Each layer was unprotected, and
+    `webapp/api.py`'s claim that the dependency "is independently tested" was false.
+
+    Structural assertions are weaker than executed ones. This one is also the only kind
+    available here, and it fails on exactly the deletion that mattered.
+    """
+    gated = {
+        ("GET", "/dashboard/activity"),
+        ("GET", "/dashboard/changes"),
+        ("GET", "/dashboard/personal"),
+        ("POST", "/interests"),
+        ("DELETE", "/interests/{topic_id}"),
+    }
+
+    found = set()
+    for route in app.routes:
+        methods = getattr(route, "methods", None) or set()
+        for method in methods:
+            if (method, getattr(route, "path", "")) not in gated:
+                continue
+            names = [
+                getattr(getattr(d, "dependency", None), "__name__", "")
+                for d in getattr(route, "dependencies", [])
+            ]
+            assert "require_dashboard_enabled" in names, (
+                f"{method} {route.path} has no route-level gate dependency; it is relying "
+                "on the middleware alone"
+            )
+            found.add((method, route.path))
+
+    assert found == gated, f"did not find all gated routes: missing {gated - found}"
+
+
+def test_the_middleware_gates_a_request_the_dependency_cannot_reach(db_session, monkeypatch):
+    """The middleware's own reason to exist, isolated.
+
+    A malformed JSON body is decoded by FastAPI before dependencies are solved, so the
+    route-level gate cannot intercept it. This is the one request shape that proves the
+    middleware is doing something the dependency cannot -- and it was the middleware's
+    only coverage, which is why its deletion was otherwise invisible.
+    """
+    monkeypatch.setattr("dashboard.flags.dashboard_enabled", lambda: False)
+    client = _client(db_session)
+
+    response = client.post(
+        "/interests", content=b"{definitely not json", headers={"Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}

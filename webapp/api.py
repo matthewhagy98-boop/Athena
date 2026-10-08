@@ -360,12 +360,14 @@ def require_dashboard_enabled() -> None:
         raise HTTPException(status_code=404, detail="Not Found")
 
 
-# The five routes the flag hides. `/features` is deliberately absent: the client has to be
-# able to ask whether the dashboard exists, so it is never gated.
-_GATED_PREFIXES = ("/dashboard/", "/interests")
-
-
 def _is_gated_path(path: str) -> bool:
+    """The five routes the flag hides.
+
+    `/features` is deliberately absent: the client has to be able to ask whether the
+    dashboard exists, so it is never gated. There was a `_GATED_PREFIXES` tuple here that
+    this function never consulted -- dead, and worse, it stated the rule a second time
+    where the two could drift apart.
+    """
     return path == "/interests" or path.startswith("/interests/") or path.startswith("/dashboard/")
 
 
@@ -385,9 +387,16 @@ async def gate_dashboard_before_the_body_is_read(request: Request, call_next):
     spec wants indistinguishable from never-deployed.
 
     Middleware runs before routing, so nothing about the request has been interpreted yet.
-    The route dependency stays as well: it is independently tested, it keeps the guarantee
-    local to each route where the next reader will look, and two cheap checks are worth
-    more than one for a kill switch.
+    The route dependency stays as well: it keeps the guarantee local to each route where
+    the next reader will look, and two cheap checks are worth more than one for a kill
+    switch.
+
+    "It is independently tested" is what this comment used to say, and it was false:
+    either layer alone produces the same 404s, so no behavioural test could distinguish
+    them. Deleting all five dependencies left the suite at 549 passed, and neutering this
+    middleware left the five discriminating-input tests passing. Both are now pinned --
+    the dependencies structurally (there is no behavioural way), the middleware by the one
+    request shape only it can intercept, a malformed body.
 
     A `bytes` body was tried first and does not work -- FastAPI still JSON-decodes it. An
     `async def` handler awaiting `request.json()` would work but would put this route's

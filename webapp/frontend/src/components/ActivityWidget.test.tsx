@@ -73,13 +73,22 @@ test("explains that the ranking measures volume, not significance, reachably", (
 
   const toggle = screen.getByRole("button", { name: /what does this mean/i });
   expect(toggle).toHaveAttribute("aria-expanded", "false");
-  expect(
-    screen.queryByText(/volume of newly indexed and changed evidence/i),
-  ).not.toBeInTheDocument();
+
+  // aria-controls is an IDREF, so the element it names must exist even while collapsed --
+  // otherwise the attribute points at nothing. It was conditionally mounted, so it did
+  // not. Asserted by resolving the reference rather than by its presence, because only
+  // resolving it can fail when the target is unmounted.
+  const controlled = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+  expect(controlled).not.toBeNull();
+  // Not `queryByText(...).not.toBeInTheDocument()`: the paragraph is now always in the
+  // DOM so the IDREF resolves, so presence is the wrong question. Visibility is the one
+  // the user experiences, and `hidden` also keeps it out of the accessibility tree.
+  expect(controlled).not.toBeVisible();
 
   fireEvent.click(toggle);
 
   expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(controlled).toBeVisible();
   expect(
     screen.getByText(/volume of newly indexed and changed evidence/i),
   ).toBeInTheDocument();

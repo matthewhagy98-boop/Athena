@@ -212,3 +212,52 @@ test("a 500 still says something, rather than re-enabling the button in silence"
 
   await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/something went wrong/i));
 });
+
+
+test("the identity gate alone disables the control, with the flag already resolved", async () => {
+  // Isolates `noIdentityYet`. The earlier test for it clicked before /features resolved,
+  // so waitFor(...toBeDisabled()) succeeded on its first poll against the PENDING-flag
+  // state and the identity gate was never observed -- dropping it from the disabled
+  // expression left all 157 tests passing. This waits for the flag to resolve first, so
+  // the only thing that can still hold the button down is identity.
+  server.use(http.get("/features", () => HttpResponse.json({ dashboard_enabled: true })));
+  localStorage.removeItem("athena_user_id");
+  server.use(http.post("/users/anonymous", () => new Promise(() => {})));  // never resolves
+  render(<InterestTopicPicker />, { wrapper });
+
+  // The flag has arrived: proof is that the flag-off notice is absent.
+  await waitFor(() =>
+    expect(screen.queryByText(/isn't available on this deployment/i)).not.toBeInTheDocument(),
+  );
+  fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: "sepsis" } });
+
+  expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+});
+
+test("the flag gate alone disables the control, with text already typed", async () => {
+  // Isolates `!dashboardEnabled`. Its own test never typed, so `!freeText.trim()` already
+  // disabled the button and dropping the flag gate changed nothing.
+  server.use(http.get("/features", () => HttpResponse.json({ dashboard_enabled: false })));
+  renderPicker();
+
+  await waitFor(() =>
+    expect(screen.getByText(/isn't available on this deployment/i)).toBeInTheDocument(),
+  );
+  fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: "sepsis" } });
+
+  expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+});
+
+test("a failed identity request is surfaced, not swallowed", async () => {
+  // The whole point of the fix: useIdentity().error was "set on failure and consumed by
+  // nothing". It had zero coverage -- the one test touching this path stubbed
+  // POST /users/anonymous as a never-resolving promise, so the catch never fired and the
+  // message could be deleted green.
+  localStorage.removeItem("athena_user_id");
+  server.use(http.post("/users/anonymous", () => new HttpResponse(null, { status: 500 })));
+  render(<InterestTopicPicker />, { wrapper });
+
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't set up a profile for this browser/i)).toBeInTheDocument(),
+  );
+});

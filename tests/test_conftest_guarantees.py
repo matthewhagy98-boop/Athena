@@ -10,8 +10,10 @@ Nothing here tests the code under development. It tests the things the rest of t
 assumes without checking.
 """
 
+import os
 import re
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select, text
@@ -162,22 +164,44 @@ def test_the_guard_refuses_a_local_database_whose_name_is_not_disposable(monkeyp
     assert "does not look disposable" in str(exit_info.value)
 
 
-def test_reset_leaked_state_actually_calls_the_guard():
-    """Structural, deliberately, because the alternative is untestable.
+def test_the_suite_refuses_to_start_against_a_non_disposable_database():
+    """Executed, in a subprocess, because that is the only layer where it is observable.
 
-    The guard runs during autouse fixture SETUP, before any test body, so no test can
-    monkeypatch it in time to observe the call. Deleting the call from the fixture left
-    every other test here passing -- the guard was fully tested and entirely unwired.
-    Reading the source is a weaker check than executing it; it is also the only one
-    available, and it catches exactly that deletion.
+    The guard runs during autouse fixture SETUP, before any test body, so nothing inside a
+    test can monkeypatch it in time to watch the call. The first version of this test read
+    the fixture's source for the call -- which `if False:` around that call defeats while
+    keeping the string, and the guard was then genuinely dead. Reading source cannot
+    distinguish a call from a disabled call.
+
+    A subprocess can: run pytest against a database that must be refused and assert it
+    exits without collecting. This is slower (a few seconds) and worth it -- the thing
+    being protected is somebody's production search index.
     """
-    import inspect
+    import subprocess
+    import sys
 
-    source = inspect.getsource(conftest.reset_leaked_state)
+    env = {
+        **os.environ,
+        "DATABASE_URL": "postgresql+psycopg://e:p@localhost:5432/athena_precision",
+    }
+    env.pop(conftest._OVERRIDE_ENV, None)
 
-    assert "_guard_the_database_is_disposable()" in source, (
-        "reset_leaked_state no longer calls the guard, so the suite will happily delete "
-        "committed rows from whatever DATABASE_URL points at"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/dashboard/test_windows.py", "-q", "-p", "no:cacheprovider"],
+        cwd=str(Path(__file__).resolve().parent.parent),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+    combined = result.stdout + result.stderr
+    assert result.returncode != 0, f"the suite RAN against athena_precision:\n{combined[-2000:]}"
+    assert "does not look disposable" in combined, (
+        f"it failed, but not because the guard stopped it:\n{combined[-2000:]}"
+    )
+    assert " passed" not in combined, (
+        f"tests executed before the guard refused:\n{combined[-2000:]}"
     )
 
 
@@ -193,28 +217,77 @@ def test_the_guard_allows_the_local_default_so_plain_pytest_still_works(monkeypa
     conftest._guard_the_database_is_disposable()  # must not raise
 
 
-def test_the_override_is_honoured(monkeypatch):
-    monkeypatch.setenv(conftest._OVERRIDE_ENV, "1")
-    monkeypatch.setattr(
-        conftest, "engine", _stub_engine(host="db.prod.internal", database="anything")
-    )
+def _stub_engine(host: str, database: str, query_host: str | None = None):
+    """`query_host` models the `?host=` form, where libpq takes the host from the query
+    string and SQLAlchemy leaves `url.host` as None."""
 
-    conftest._guard_the_database_is_disposable()  # must not raise
-
-
-def _stub_engine(host: str, database: str):
     class _Url:
         def __init__(self):
             self.host = host
             self.database = database
+            self.query = {"host": query_host} if query_host is not None else {}
 
         def render_as_string(self, hide_password=True):
-            return f"postgresql://user:***@{host}/{database}"
+            return f"postgresql://user:***@{host or ''}/{database}"
 
     class _Engine:
         url = _Url()
 
     return _Engine()
+
+
+@pytest.mark.parametrize(
+    "host,query_host,expect_refused,label",
+    [
+        (None, "db.prod.internal", True, "remote host in the query string"),
+        (None, "/cloudsql/acme-prod:us-central1:db", True, "Cloud SQL proxy socket"),
+        (None, None, False, "local unix socket, no host at all"),
+        (None, "localhost", False, "localhost in the query string"),
+        (None, "/tmp", False, "local socket directory"),
+        ("localhost", "db.prod.internal", True, "query host wins over url.host"),
+    ],
+)
+def test_the_guard_reads_the_host_libpq_will_actually_use(
+    monkeypatch, host, query_host, expect_refused, label
+):
+    """`url.host` is not the host. libpq accepts it as a query parameter, and SQLAlchemy
+    leaves `url.host` None in that form -- which the first version of this guard read as
+    the empty string and therefore as local. So
+    `postgresql://u:p@/evidence_engine?host=db.prod.internal` -- remote production, with an
+    allowlisted name -- was allowed. A socket path is not automatically local either:
+    /cloudsql/... reaches a database in someone's cloud.
+    """
+    monkeypatch.delenv(conftest._OVERRIDE_ENV, raising=False)
+    monkeypatch.setattr(
+        conftest, "engine", _stub_engine(host=host, database="evidence_engine", query_host=query_host)
+    )
+
+    if expect_refused:
+        with pytest.raises(pytest.exit.Exception) as exit_info:
+            conftest._guard_the_database_is_disposable()
+        assert "is not this machine" in str(exit_info.value), label
+    else:
+        conftest._guard_the_database_is_disposable()  # must not raise
+
+
+def test_the_override_waives_the_name_check_but_never_the_host_check(monkeypatch):
+    """The override exists for a local database whose name cannot be inferred. If it also
+    waived the host check it would reinstate the exact "one stale export" threat this guard
+    was written for -- with the export now being the override, which someone may leave set
+    in their shell."""
+    monkeypatch.setenv(conftest._OVERRIDE_ENV, "1")
+
+    monkeypatch.setattr(
+        conftest, "engine", _stub_engine(host="localhost", database="athena_precision")
+    )
+    conftest._guard_the_database_is_disposable()  # name waived: fine
+
+    monkeypatch.setattr(
+        conftest, "engine", _stub_engine(host="db.prod.internal", database="dashboard_dev")
+    )
+    with pytest.raises(pytest.exit.Exception) as exit_info:
+        conftest._guard_the_database_is_disposable()
+    assert "is not this machine" in str(exit_info.value)
 
 
 # --- two-phase checks ------------------------------------------------------------------
@@ -353,7 +426,17 @@ def test_phase2_neither_row_survived(db_session):
         {"uid": _PLANTED["anon_user_id"]},
     ).scalar()
 
-    if "demo_event_id" in _PLANTED:
+    # Explicit skip rather than a silent `if`: on a database where seed_demo_data has
+    # never run there is no demo topic to plant against, and the original form just
+    # vanished -- the same mutation that this catches with the topic present left 24
+    # passing without it. A skipped test is visible in the output; a silently-absent
+    # assertion is not.
+    if "demo_event_id" not in _PLANTED:
+        pytest.skip(
+            f"no {DEMO_TOPIC!r} topic in this database, so the demo-event cleanup cannot "
+            "be exercised -- run scripts/seed_demo_data.py to cover it"
+        )
+    if True:
         leaked_event = db_session.execute(
             text("SELECT count(*) FROM change_events WHERE id = :eid"),
             {"eid": _PLANTED["demo_event_id"]},

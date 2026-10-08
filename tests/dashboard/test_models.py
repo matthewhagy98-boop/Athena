@@ -184,13 +184,35 @@ def test_the_detected_at_index_is_declared_on_the_model_so_autogenerate_keeps_it
     from evidence_engine.db.models import Base
 
     context = MigrationContext.configure(db_session.connection())
+    # Every index on the tables this branch owns, not one hardcoded name. The name filter
+    # was the defect: it pinned the one index the test was written for and left the
+    # delta's own two exposed -- the (topic_id, detected_at) composite from d8f3b61a04c7,
+    # and the singleton unique index from e5a71c8d9f20 that its commit calls "the
+    # load-bearing fix".
+    #
+    # Scoped by table rather than asserting zero globally, which I tried first: a shared
+    # dev database carries indexes from other branches' migrations whose models are not on
+    # this branch at all (six of them, from the citation and synthesis sub-projects), so a
+    # blanket assertion fails for reasons that have nothing to do with this code. Table
+    # scoping is the same rule tests/conftest.py prescribes for citation_snapshots --
+    # assert about what you own.
+    owned = {
+        "change_events",
+        "topic_activity_snapshots",
+        "dashboard_job_state",
+        "dashboard_rate_windows",
+        "paper_search_index",
+        "search_index_sync_state",
+    }
     drops = [
         diff
         for diff in compare_metadata(context, Base.metadata)
-        if diff[0] == "remove_index" and diff[1].name == "ix_change_events_detected_at"
+        if diff[0] == "remove_index" and diff[1].table.name in owned
     ]
 
     assert drops == [], (
-        "autogenerate would drop ix_change_events_detected_at -- declare it in "
-        "ChangeEvent.__table_args__ as well as creating it in the migration"
+        "autogenerate would drop "
+        + ", ".join(sorted(d[1].name for d in drops))
+        + " -- an index created by raw SQL in a migration must ALSO be declared in the "
+        "model's __table_args__, or the next generated migration removes it"
     )

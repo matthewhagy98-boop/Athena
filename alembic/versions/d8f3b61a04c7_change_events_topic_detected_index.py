@@ -9,7 +9,13 @@ across 500 topics, asking for 8 topics:
 
     no filter                  Parallel Seq Scan   cost 5419
     topic filter, no index     Parallel Seq Scan   cost 6017   (slightly worse)
-    topic filter + this index  Index Only Scan     cost  144
+    topic filter + this index  index scan          cost  144
+
+The 144 figure came from a planner that chose an Index Only Scan on that particular
+corpus. Review re-measured on a rebuilt 200k/500 corpus and got a Bitmap Heap Scan at
+2139 -- so the win is real but roughly 2.5x, not 40x. Both measurements agree on the
+thing that matters: the filter alone makes it slightly worse, and the index is what turns
+a full scan into an index scan. Treat the exact number as corpus- and planner-dependent.
 
 `change_events` previously had only its primary key and `ix_change_events_detected_at`,
 neither of which can serve a per-topic aggregate. This index also covers

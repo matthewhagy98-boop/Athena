@@ -13,6 +13,13 @@ from evidence_engine.db.models import Topic
 # POST /interests triggers an outbound PubMed term resolution inside get_or_create_topic,
 # so it is the one C endpoint with an external dependency. Read endpoints are single
 # indexed queries and are not limited.
+#
+# What this limit does NOT do, since the obvious reading is wrong: it does not bound the
+# platform's total outbound PubMed calls. The subject is `user:{uuid}` and
+# `POST /users/anonymous` mints a fresh user_id on demand with no limit of its own, so a
+# caller willing to mint identities has no effective cap. This bounds a *single* identity,
+# which stops accidental hammering and casual abuse; bounding the provider spend needs a
+# limit keyed on something the caller cannot mint, which is outside this sub-project.
 RATE_LIMIT_PER_HOUR = 30
 MAX_FREE_TEXT = 200
 

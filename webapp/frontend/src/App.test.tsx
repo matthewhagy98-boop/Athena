@@ -143,7 +143,10 @@ test("an erroring /features lands on search promptly, not after the retry sequen
   // retry: 1, so one backoff then a decision.
   await waitFor(
     () => expect(screen.getByLabelText("Search")).toHaveAttribute("aria-current", "page"),
-    { timeout: 6000 },
+    // 4000, not 6000: vitest's default testTimeout is 5000, so a waitFor timeout above it
+    // can never be reached -- the test dies first and the longer bound is dead. The
+    // assertion below is 2000 anyway, so 4000 is ample headroom.
+    { timeout: 4000 },
   );
   const elapsed = Date.now() - startedAt;
   // 2s is chosen to sit between the two policies, not as a round number: react-query's

@@ -122,11 +122,22 @@ generation; the trade-off is that a hard-killed run now leaves `running` behind 
 than self-clearing, which is the point. A stuck `running` is diagnosable; a false `idle`
 is not.
 
-A consequence worth knowing: because that commit releases the row lock, two concurrent
-runs no longer queue behind each other. Previously a manual run started while the cron
-run was in flight would block for the entire job with no timeout and no message. They now
-both proceed and the last to publish wins — wasteful rather than wrong, since each
-generation is published atomically and both compute the same window.
+A consequence worth knowing, and it is worse than "wasteful". Because that commit releases
+the row lock, two concurrent runs no longer queue behind each other: previously a manual
+run started while cron was in flight blocked for the entire job with no timeout and no
+message. They now both proceed, and review observed two real effects:
+
+- `status` reads `idle` while the second run is still working, because the first run's
+  publish clears the shared marker. So a `running` marker is not reliable while runs
+  overlap — the one condition under which you would most want it.
+- The winner is **commit order, not `as_of`**. An overrunning run can publish an older
+  window as current, with a `completed_at` fresh enough that `StalenessBanner` stays
+  silent about it.
+
+Neither corrupts a generation — each is still written and published atomically — but do
+not run the job concurrently with itself and expect the state row to describe reality. If
+overlapping runs become routine, the fix is an advisory lock with an "already running"
+early exit, not a tighter read of this table.
 
 A **quiet week** — genuinely nothing crossed `MIN_EVENTS` for any topic — is a
 `status = 'idle'` run with `topics_processed = 0` and an empty `topics` array from
@@ -235,6 +246,16 @@ as well: it is independently tested and keeps the guarantee local to each route.
 The published schema is filtered to match. `/openapi.json` and `/docs` previously listed
 all five routes with every parameter name, location, type and default while the flag was
 off — strictly more disclosure than the 422s the gate was written to suppress.
+
+**What is still not achieved, stated plainly.** Spec section 20 asks for "indistinguishable
+from a deployment where it was never added", and that is not met. With the frontend's
+StaticFiles mount installed — the deployed configuration — a gated `POST /interests`
+returns `404` while a path that was never routed at all returns `405` from the mount. A
+404 is as distinguishable from a 405 as the old 422 was. Closing it means making the gated
+paths answer exactly what the mount answers for every method, which is a larger change
+than the flag warranted; recorded here so the gap is known rather than assumed closed.
+Note this is invisible under pytest, where `frontend/dist` does not exist and the mount is
+absent.
 
 **Flipping the flag takes effect on an API restart, with no frontend rebuild.** The client
 reads `/features` at runtime, so the redirect and the nav entry follow the backend.
