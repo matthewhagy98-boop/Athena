@@ -40,13 +40,14 @@ def test_an_uncommitted_row_is_invisible_to_another_connection(db_session):
     NOT verify isolation -- the pair of tests at the bottom of this file does that, across
     a test boundary, which is the only place the teardown's behaviour becomes observable.
     """
-    db_session.add(Topic(canonical_label=_MARKER, mesh_id=f"D_PROBE_{uuid.uuid4().hex[:8]}"))
+    marker = f"{_MARKER}-uncommitted"
+    db_session.add(Topic(canonical_label=marker, mesh_id=f"D_PROBE_{uuid.uuid4().hex[:8]}"))
     db_session.flush()
 
     with engine.connect() as other:
         visible = other.execute(
             text("SELECT count(*) FROM topics WHERE canonical_label = :label"),
-            {"label": _MARKER},
+            {"label": marker},
         ).scalar()
 
     assert visible == 0
@@ -61,13 +62,17 @@ def test_an_explicit_commit_inside_db_session_still_does_not_escape(db_session):
     `running` marker mid-function, and `scripts/seed_demo_data.py` commits by design. If
     this stopped holding, those paths would start writing real rows from every test run.
     """
-    db_session.add(Topic(canonical_label=_MARKER, mesh_id=f"D_PROBE_{uuid.uuid4().hex[:8]}"))
+    # Its own marker, not the module-level one. These two tests shared it, so under the
+    # rollback mutation this one "failed" on a row the PREVIOUS test had planted -- killed
+    # for the right outcome by the wrong mechanism, and the two were not independent.
+    marker = f"{_MARKER}-committed"
+    db_session.add(Topic(canonical_label=marker, mesh_id=f"D_PROBE_{uuid.uuid4().hex[:8]}"))
     db_session.commit()
 
     with engine.connect() as other:
         visible = other.execute(
             text("SELECT count(*) FROM topics WHERE canonical_label = :label"),
-            {"label": _MARKER},
+            {"label": marker},
         ).scalar()
 
     assert visible == 0, (
@@ -102,7 +107,24 @@ def test_the_anon_user_cleanup_pattern_still_matches_what_the_app_mints(db_sessi
 
     user = create_anonymous_user(db_session)
 
-    assert re.fullmatch(r"anon-[0-9a-f-]{36}@no-reply\.local", user.email), user.email
+    # Against the patterns reset_leaked_state actually uses, evaluated by the same SQL
+    # LIKE the fixture runs -- not against a regex written here. The previous version
+    # compared the minted email to a hand-written pattern, so renaming the cleanup's
+    # prefix to 'anonymous-%' left it green: it was checking the test against itself.
+    matches = db_session.execute(
+        text("SELECT :email LIKE :prefix AND :email LIKE :suffix"),
+        {
+            "email": user.email,
+            "prefix": conftest.ANON_EMAIL_PREFIX_LIKE,
+            "suffix": conftest.ANON_EMAIL_SUFFIX_LIKE,
+        },
+    ).scalar()
+
+    assert matches, (
+        f"create_anonymous_user mints {user.email!r}, which reset_leaked_state's patterns "
+        f"({conftest.ANON_EMAIL_PREFIX_LIKE!r}, {conftest.ANON_EMAIL_SUFFIX_LIKE!r}) do not "
+        "match -- anonymous users will accumulate forever"
+    )
 
 
 # --- the destructive-delete guard -------------------------------------------------------
@@ -383,6 +405,16 @@ def test_phase2_neither_row_survived(db_session):
     """If `db_session` stopped rolling back, the Topic is here. If `reset_leaked_state`
     stopped clearing `dashboard_rate_windows`, the quota row is here. Both mutations were
     invisible to every other test in this file."""
+    # Checked first: without phase1 the three "count == 0" assertions below all pass
+    # vacuously and the test then dies on a KeyError from inside an argument list. Passing
+    # on a clean database is the exact pattern this file exists to repudiate, so say so.
+    assert _PLANTED, (
+        "test_phase1_plant_rows_that_must_not_survive did not run before this test, so "
+        "there is nothing planted to look for and every assertion below would pass "
+        "vacuously. Declaration order is execution order; do not reorder or deselect them "
+        "independently."
+    )
+
     leaked_topic = db_session.execute(
         text("SELECT count(*) FROM topics WHERE canonical_label = :label"),
         {"label": _ESCAPE_PROBE},

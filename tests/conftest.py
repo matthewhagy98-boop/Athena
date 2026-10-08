@@ -14,11 +14,20 @@ from scripts.seed_demo_data import DEMO_TOPIC
 # exported -- one stale `export` in a shell, one wrong `.env` -- would truncate a real
 # deployment's search index before a single test ran.
 #
-# The HOST is the load-bearing check, not the name. A production database is reached over
-# the network; a disposable one is on this machine. That is a far stronger signal than any
-# name pattern, because names do not reliably distinguish the two -- this project's own dev
-# database is called `evidence_engine`, which is exactly what a production one would be
-# called too.
+# The HOST is the primary check, and it is weaker than it looks -- stated here precisely,
+# because the previous wording called it "a far stronger signal" and that is what the next
+# person would have trusted. A tunnel defeats it: `localhost:6432` fronting PgBouncer, or
+# `127.0.0.1:15432` from `ssh -L` or `kubectl port-forward`, is how a laptop actually
+# reaches production, and both look local. The review database for this branch is itself
+# reached through a Docker port map.
+#
+# It is still the right primary check -- it refuses an ordinary production URL, which is
+# the realistic accident -- but it is not proof, and nothing in a URL can be. The only
+# check a URL cannot lie about is a marker row the suite itself planted; that is the fix if
+# this ever needs to be airtight.
+#
+# Names cannot carry the decision either: this project's dev database is `evidence_engine`,
+# exactly what a production one would be called.
 #
 # The name check is secondary and matches whole TOKENS, not substrings. A first version of
 # this guard matched raw substrings including "ci" and "dev", which let through
@@ -34,19 +43,40 @@ _LOCAL_SOCKET_PREFIXES = ("/tmp", "/private/tmp", "/var/run/postgresql", "/run/p
 # Named explicitly because their names carry no "this is disposable" signal at all.
 _KNOWN_LOCAL_DATABASES = frozenset({"evidence_engine", "dashboard_dev"})
 _DISPOSABLE_NAME_TOKENS = frozenset({"test", "tests", "dev", "ci", "scratch", "tmp", "local"})
+# Refused outright, whatever else the name contains. Whole-token matching alone still
+# allowed `production_local`, `prod_tmp`, `athena_ci_prod` and `customer_dev_data` -- the
+# names most likely to be a real database, since a disposable-sounding token sitting next
+# to "prod" is how staging copies and port-forwards get named.
+#
+# Still allowed and known: `customer_dev_data`, on its "dev" token. Deliberately not
+# chased -- adding "customer" starts the denylist spiral this allowlist exists to avoid,
+# and the host check is in front of it. If you keep real data in a locally-reachable
+# database with "dev" in the name, set nothing and read the refusal message instead.
+_NEVER_DISPOSABLE_TOKENS = frozenset({"prod", "production", "live", "prd"})
 _DISPOSABLE_NAME_PREFIXES = ("review_", "verify_", "perf_", "race_", "migration_")
 # Escape hatch for a local database whose name this cannot infer. Deliberately an env var
 # rather than another name pattern: setting it is a deliberate act, and widening the
 # patterns is how the first version got dangerous.
 _OVERRIDE_ENV = "ATHENA_TESTS_MAY_DELETE"
 
+# The two LIKE patterns that decide which users this fixture deletes, named so a test can
+# check them against what digest.profiles.create_anonymous_user actually mints. They used
+# to be inline in the SQL below, which meant the drift test could only compare against a
+# regex hand-written in the test -- i.e. against itself.
+ANON_EMAIL_PREFIX_LIKE = "anon-%"
+ANON_EMAIL_SUFFIX_LIKE = "%@no-reply.local"
+
 
 def _looks_disposable(name: str) -> bool:
+    tokens = set(re.split(r"[^a-z0-9]+", name))
+    # Checked first, so no amount of disposable-looking naming can override it.
+    if _NEVER_DISPOSABLE_TOKENS & tokens:
+        return False
     if name in _KNOWN_LOCAL_DATABASES:
         return True
     if name.startswith(_DISPOSABLE_NAME_PREFIXES):
         return True
-    return bool(_DISPOSABLE_NAME_TOKENS & set(re.split(r"[^a-z0-9]+", name)))
+    return bool(_DISPOSABLE_NAME_TOKENS & tokens)
 
 
 def _effective_host(url) -> str:
@@ -123,7 +153,10 @@ def reset_leaked_state():
     demo topics, papers, and scores are left untouched.
     """
     _guard_the_database_is_disposable()
-    anon = "SELECT id FROM users WHERE email LIKE 'anon-%' AND email LIKE '%@no-reply.local'"
+    anon = (
+        "SELECT id FROM users WHERE "
+        f"email LIKE '{ANON_EMAIL_PREFIX_LIKE}' AND email LIKE '{ANON_EMAIL_SUFFIX_LIKE}'"
+    )
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM paper_search_index"))
         conn.execute(text("DELETE FROM search_index_sync_state"))

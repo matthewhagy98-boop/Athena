@@ -342,7 +342,7 @@ def test_the_change_feed_window_is_half_open_at_its_cutoff(db_session):
     been got wrong three separate times here, always on one side only.
     """
     topic = _topic(db_session, "Boundary topic")
-    now = datetime(2026, 9, 20, 12, 0, 0)
+    now = FEED_NOW
     cutoff = now - timedelta(days=7)
     for label, when in (
         ("on the cutoff", cutoff),
@@ -380,7 +380,7 @@ def test_a_future_dated_event_never_appears(db_session):
     """A clock-skewed ingest or a backfill with a bad date would otherwise sit at the
     top of a recency feed permanently, which is the worst position for a wrong row."""
     topic = _topic(db_session, "Future topic")
-    now = datetime(2026, 9, 20, 12, 0, 0)
+    now = FEED_NOW
     paper = _paper(db_session, "Dated next year")
     db_session.add(
         ChangeEvent(

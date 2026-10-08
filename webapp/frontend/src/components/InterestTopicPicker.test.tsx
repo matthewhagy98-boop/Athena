@@ -232,6 +232,9 @@ test("the identity gate alone disables the control, with the flag already resolv
   fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: "sepsis" } });
 
   expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+  // The input carries the same two gates and was unprotected too -- a user who cannot
+  // submit should not be left typing into a live field either.
+  expect(screen.getByLabelText(/add a topic to follow/i)).toBeDisabled();
 });
 
 test("the flag gate alone disables the control, with text already typed", async () => {
@@ -246,6 +249,7 @@ test("the flag gate alone disables the control, with text already typed", async 
   fireEvent.change(screen.getByLabelText(/add a topic to follow/i), { target: { value: "sepsis" } });
 
   expect(screen.getByRole("button", { name: /add/i })).toBeDisabled();
+  expect(screen.getByLabelText(/add a topic to follow/i)).toBeDisabled();
 });
 
 test("a failed identity request is surfaced, not swallowed", async () => {
