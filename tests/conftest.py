@@ -1,8 +1,133 @@
+import os
+import re
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from evidence_engine.db.session import engine
+from scripts.seed_demo_data import DEMO_TOPIC
+
+# Whether this suite may delete committed rows from the database it is pointed at.
+# `reset_leaked_state` below is autouse and unconditionally DELETEs from eight tables,
+# including `paper_search_index`, so running `pytest` with a production DATABASE_URL
+# exported -- one stale `export` in a shell, one wrong `.env` -- would truncate a real
+# deployment's search index before a single test ran.
+#
+# The HOST is the primary check, and it is weaker than it looks -- stated here precisely,
+# because the previous wording called it "a far stronger signal" and that is what the next
+# person would have trusted. A tunnel defeats it: `localhost:6432` fronting PgBouncer, or
+# `127.0.0.1:15432` from `ssh -L` or `kubectl port-forward`, is how a laptop actually
+# reaches production, and both look local. The review database for this branch is itself
+# reached through a Docker port map.
+#
+# It is still the right primary check -- it refuses an ordinary production URL, which is
+# the realistic accident -- but it is not proof, and nothing in a URL can be. The only
+# check a URL cannot lie about is a marker row the suite itself planted; that is the fix if
+# this ever needs to be airtight.
+#
+# Names cannot carry the decision either: this project's dev database is `evidence_engine`,
+# exactly what a production one would be called.
+#
+# The name check is secondary and matches whole TOKENS, not substrings. A first version of
+# this guard matched raw substrings including "ci" and "dev", which let through
+# `athena_precision`, `medicine_db`, `athena_decisions`, `specimen_store` and
+# `athena_devices` -- a safety guard that waved through the exact thing it existed to
+# catch. It also refused `evidence_engine`, breaking plain `pytest` for anyone who had not
+# sourced `.superpowers/sdd/c-env.sh`.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+# Unix-socket directories that can only reach a server on this machine. A socket path is
+# NOT automatically local: `?host=/cloudsql/project:region:instance` is a Cloud SQL proxy
+# socket to a database in someone's cloud.
+_LOCAL_SOCKET_PREFIXES = ("/tmp", "/private/tmp", "/var/run/postgresql", "/run/postgresql")
+# Named explicitly because their names carry no "this is disposable" signal at all.
+_KNOWN_LOCAL_DATABASES = frozenset({"evidence_engine", "dashboard_dev"})
+_DISPOSABLE_NAME_TOKENS = frozenset({"test", "tests", "dev", "ci", "scratch", "tmp", "local"})
+# Refused outright, whatever else the name contains. Whole-token matching alone still
+# allowed `production_local`, `prod_tmp`, `athena_ci_prod` and `customer_dev_data` -- the
+# names most likely to be a real database, since a disposable-sounding token sitting next
+# to "prod" is how staging copies and port-forwards get named.
+#
+# Still allowed and known: `customer_dev_data`, on its "dev" token. Deliberately not
+# chased -- adding "customer" starts the denylist spiral this allowlist exists to avoid,
+# and the host check is in front of it. If you keep real data in a locally-reachable
+# database with "dev" in the name, set nothing and read the refusal message instead.
+_NEVER_DISPOSABLE_TOKENS = frozenset({"prod", "production", "live", "prd"})
+_DISPOSABLE_NAME_PREFIXES = ("review_", "verify_", "perf_", "race_", "migration_")
+# Escape hatch for a local database whose name this cannot infer. Deliberately an env var
+# rather than another name pattern: setting it is a deliberate act, and widening the
+# patterns is how the first version got dangerous.
+_OVERRIDE_ENV = "ATHENA_TESTS_MAY_DELETE"
+
+# The two LIKE patterns that decide which users this fixture deletes, named so a test can
+# check them against what digest.profiles.create_anonymous_user actually mints. They used
+# to be inline in the SQL below, which meant the drift test could only compare against a
+# regex hand-written in the test -- i.e. against itself.
+ANON_EMAIL_PREFIX_LIKE = "anon-%"
+ANON_EMAIL_SUFFIX_LIKE = "%@no-reply.local"
+
+
+def _looks_disposable(name: str) -> bool:
+    tokens = set(re.split(r"[^a-z0-9]+", name))
+    # Checked first, so no amount of disposable-looking naming can override it.
+    if _NEVER_DISPOSABLE_TOKENS & tokens:
+        return False
+    if name in _KNOWN_LOCAL_DATABASES:
+        return True
+    if name.startswith(_DISPOSABLE_NAME_PREFIXES):
+        return True
+    return bool(_DISPOSABLE_NAME_TOKENS & tokens)
+
+
+def _effective_host(url) -> str:
+    """The host libpq will actually connect to.
+
+    `url.host` is NOT it. libpq accepts the host as a query parameter, and SQLAlchemy
+    leaves `url.host` as None in that form -- which the first version of this guard read as
+    the empty string and therefore as local. So
+    `postgresql://u:p@/evidence_engine?host=db.prod.internal` -- a remote production
+    database with an allowlisted name -- was ALLOWED. Verified before fixing.
+    """
+    query_host = url.query.get("host")
+    if isinstance(query_host, (tuple, list)):  # libpq permits a repeated key
+        query_host = query_host[0] if query_host else None
+    return str(query_host or url.host or "").lower()
+
+
+def _is_local_host(host: str) -> bool:
+    if host.startswith("/"):
+        return host.startswith(_LOCAL_SOCKET_PREFIXES)
+    return host in _LOCAL_HOSTS
+
+
+def _guard_the_database_is_disposable() -> None:
+    url = engine.url
+    name = (url.database or "").lower()
+    host = _effective_host(url)
+
+    # The host check is NOT waivable. The override exists for a local database whose name
+    # this cannot infer; it must not also wave through a remote one, or it reinstates
+    # exactly the "one stale export" threat this guard was written for -- with the export
+    # now being the override itself, which someone may well leave set in their shell.
+    if not _is_local_host(host):
+        reason = f"host {host!r} is not this machine"
+    elif os.environ.get(_OVERRIDE_ENV) == "1":
+        return
+    elif not _looks_disposable(name):
+        reason = f"database {name!r} does not look disposable"
+    else:
+        return
+
+    pytest.exit(
+        f"Refusing to run: {reason}. This suite DELETEs committed rows from "
+        "paper_search_index, search_index_sync_state, citation_refresh_state, "
+        "citation_velocity_cache, topic_activity_snapshots, dashboard_job_state and "
+        "dashboard_rate_windows before every single test, so pointing it at a real "
+        f"deployment destroys data. DATABASE_URL = {url.render_as_string(hide_password=True)}. "
+        f"If this really is a disposable LOCAL database, set {_OVERRIDE_ENV}=1 -- "
+        "which waives the name check but never the host check.",
+        returncode=3,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +142,9 @@ def reset_leaked_state():
 
       * global scans, e.g. `select_due_users` reading every active user;
       * single-row watermark tables, where a stale `last_synced_at` makes the
-        incremental sync skip the fixtures a test just seeded.
+        incremental sync skip the fixtures a test just seeded;
+      * relative-time-window queries, where a row dated "recently" by one committed
+        script satisfies another test's "last N days" filter.
 
     Only derived or test-generated data is removed. `paper_search_index` and
     `search_index_sync_state` are rebuildable from the source tables by
@@ -25,7 +152,11 @@ def reset_leaked_state():
     pattern minted by `POST /users/anonymous`, so genuine accounts and any seeded
     demo topics, papers, and scores are left untouched.
     """
-    anon = "SELECT id FROM users WHERE email LIKE 'anon-%' AND email LIKE '%@no-reply.local'"
+    _guard_the_database_is_disposable()
+    anon = (
+        "SELECT id FROM users WHERE "
+        f"email LIKE '{ANON_EMAIL_PREFIX_LIKE}' AND email LIKE '{ANON_EMAIL_SUFFIX_LIKE}'"
+    )
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM paper_search_index"))
         conn.execute(text("DELETE FROM search_index_sync_state"))
@@ -45,6 +176,33 @@ def reset_leaked_state():
         # assertions by paper rather than assuming an empty table.
         conn.execute(text("DELETE FROM citation_refresh_state"))
         conn.execute(text("DELETE FROM citation_velocity_cache"))
+        # dashboard_job_state is the same kind of single-row watermark as
+        # citation_refresh_state above, and topic_activity_snapshots is its derived
+        # cache; both are committed by scripts/refresh_dashboard_activity.py and by
+        # scripts/seed_demo_data.py's --run-dashboard-job flag, and both are fully
+        # rebuildable by re-running refresh_activity_snapshots.
+        conn.execute(text("DELETE FROM topic_activity_snapshots"))
+        conn.execute(text("DELETE FROM dashboard_job_state"))
+        # dashboard_rate_windows leaks by design: dashboard.interests._consume_quota
+        # commits on its own connection precisely so the charge survives the request
+        # session's rollback, which means a test's charges outlive the test. Left
+        # behind, they accumulate against a fixed clock-hour window and would
+        # eventually make a later test's first add answer 429 for no reason of its own.
+        conn.execute(text("DELETE FROM dashboard_rate_windows"))
+        # scripts/seed_demo_data.py also commits 9 weeks of ChangeEvent history for
+        # the demo topic, dated relative to "now" so the dashboard has a real
+        # trend_score to demonstrate. Unlike the demo topic's papers (dated by fixed
+        # calendar month, comfortably outside any "last N days" query by the time
+        # this suite runs), those events land inside exactly the kind of recency
+        # window dashboard/changes.py's read_change_feed queries, and would
+        # otherwise make an unrelated test's "the feed is empty" assertion fail for
+        # a reason that has nothing to do with the code under test. The demo topic
+        # itself, its papers, and its scores are left untouched, as before -- only
+        # this one code path's recent-dated rows are cleared.
+        conn.execute(
+            text("DELETE FROM change_events WHERE topic_id IN (SELECT id FROM topics WHERE canonical_label = :label)"),
+            {"label": DEMO_TOPIC},
+        )
     yield
 
 

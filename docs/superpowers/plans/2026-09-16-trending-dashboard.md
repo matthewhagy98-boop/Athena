@@ -16,10 +16,11 @@
 - **Readers never see a partial generation** (FR-C-010). `dashboard_job_state.current_generation_id` is advanced only after a run completes.
 - **The change feed hides events for retracted papers, except retractions themselves** (FR-C-006): include when `event_type == 'paper_retracted'` OR `paper_id IS NULL` OR `Paper.is_retracted = false`.
 - **The personal endpoint must never raise for a user without a profile** (FR-C-007). Resolve with `scalar_one_or_none()`; do NOT call `digest.profiles.list_interests`, which reaches `_get_profile`'s `.scalar_one()` (`digest/profiles.py:34`) and raises `NoResultFound`. Every user from `create_anonymous_user` lacks a profile, so the raising path is the *common* case on this surface.
-- **Dashboard endpoints MUST NOT write to** `change_events`, `topics`, `papers`, `scores`, or `consensus_snapshots` (FR-C-017).
+- **Dashboard endpoints MUST NOT write to** `change_events`, `papers`, `scores`, or `consensus_snapshots` (FR-C-017). **One carve-out, added after review found the original wording false:** `POST /interests` writes to `topics`, via `digest.profiles.add_interest` → `evidence_engine.topics.registry.get_or_create_topic`, which inserts a `Topic` row for a MeSH term nobody has followed yet and appends the caller's free text to `Topic.aliases`. This is unavoidable — you cannot follow a topic that does not exist — and it is the only engine-table write any dashboard endpoint performs.
 - **Copy rules (FR-C-015, FR-C-016).** Use "Most active topics", "Changes"/"What changed", "Newly tracked", "No change this week", "Data as of {timestamp}", "volume of newly indexed and changed evidence". NEVER use: "trending", "hot", "popular", "breakthrough", "important", "updates", "new topic", "nothing found", "no results", "live", "real-time", "up to date", "research momentum", "scientific activity".
 - Everything is gated behind `DASHBOARD_ENABLED`, default `false`.
-- Run tests as `arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest` from the repo root; the venv's `pydantic_core` is x86_64-only. A `.env` with `DATABASE_URL` must exist. PostgreSQL runs in docker container `evidence-engine-postgres-1`.
+- **Every `pytest` and `alembic` command on this branch MUST be preceded by `source .superpowers/sdd/c-env.sh`.** Sub-project C runs against an isolated `dashboard_dev` database. Concurrent sessions share one dev database — every worktree's `.env` is a symlink to the main one — and a parallel session applied a migration that does not exist on this branch, which left Alembic unable to autogenerate or upgrade here. Editing `.env` would have repointed that session's database mid-run. A command run without sourcing it will silently hit the shared database and either fail on an unknown revision or corrupt someone else's state.
+- Run tests as `source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest` from the repo root; the venv's `pydantic_core` is x86_64-only. PostgreSQL runs in docker container `evidence-engine-postgres-1`.
 - Frontend: from `webapp/frontend`, `npx vitest run` and `npm run build`. The build is the type check and must be clean.
 
 ## Corrections to the spec — verified against the repo on 2026-09-16
@@ -756,6 +757,48 @@ git commit -m "feat: add dashboard trend score and ranking"
 
 ---
 
+### Amendment 2026-09-17: newly-tracked topics rank on a provisional baseline
+
+Task 3's review found that `rank_topics` mixed non-commensurable quantities: scored
+topics sorted on `trend_score` (a smoothed log-ratio, typically 4-5) while newly-tracked
+topics sorted on raw `event_count` (unbounded). Measured, the failure is systematic
+rather than marginal — any newly-tracked topic with about 9 or more events outranks a
+scored topic with a typical score, even at 3x the event count:
+
+| scored topic | its key | new topic | its key | order |
+|---|---|---|---|---|
+| c=30, b=10 | 4.203 | c=9 | 9.0 | new first |
+| c=24, b=7.375 | 4.369 | c=12 | 12.0 | new first |
+| c=50, b=20 | 4.147 | c=30 | 30.0 | new first |
+
+The widget displays raw counts (FR-C-004), so a reader sees "9 changes" above
+"30 changes" under a heading reading *Most active topics*, with nothing on screen to
+explain it.
+
+**Resolution (user decision).** Newly-tracked topics are ranked with the same formula,
+substituting a *provisional* baseline: the median `baseline_mean` of the scored topics in
+the same generation — "we do not know this topic's history, so assume it is typical."
+Both kinds then sit on one scale and a busy new topic still is not buried.
+
+**This changes the ranking key only, never the stored value.** FR-C-003 requires
+`trend_score` to be null for a newly-tracked topic, and it stays null on the row and in
+the API. The provisional score exists solely to order the list.
+
+Interface changes:
+- `rank_topics(scored: list[ScoredTopic], provisional_baseline: float) -> list[ScoredTopic]`.
+  For a topic with `trend_score is not None` the key is that score; otherwise the key is
+  `(c + 1) / (provisional_baseline + 1) * log10(c + 1)`.
+- `dashboard/activity.py` computes the median of `baseline_mean` across scored topics
+  before ranking and passes it. When no topic is scored, pass `0.0`: every topic is then
+  newly tracked, the same baseline applies to all of them, and the key stays monotonic in
+  `event_count`, which is the correct ordering for that case.
+
+Required tests: a scored topic with more events outranks a newly-tracked topic with
+fewer, for the middle-range magnitudes in the table above; and the no-scored-topics case
+orders purely by count.
+
+---
+
 ## Task 4: Activity Aggregation and the Daily Job
 
 **Files:**
@@ -1099,20 +1142,23 @@ def refresh_activity_snapshots(session: Session, as_of: datetime | None = None) 
     current_counts = _counts_in_window(session, current.start, current.end)
     priors = [_counts_in_window(session, w.start, w.end) for w in baseline_windows(as_of)]
     first_seen = _first_event_at(session)
-    earliest_baseline_start = baseline_windows(as_of)[-1].start
 
     scored = []
     for topic_id, bucket in current_counts.items():
         if not is_eligible(bucket["total"]):
             continue
-        # A topic counts as fully tracked only if its first event predates the earliest
-        # baseline window -- otherwise its silent early weeks are absence of tracking,
-        # not absence of activity, and averaging them in would understate its baseline.
+        # How many complete baseline windows the topic actually existed for. A window
+        # counts only if the topic's first event predates its start -- otherwise the
+        # topic's silence through that window is absence of TRACKING, not absence of
+        # activity, and averaging it in as a zero would understate the baseline and
+        # inflate the ratio against it.
+        #
+        # This reaches 8 exactly when the first event predates the earliest baseline
+        # window, so no separate "fully tracked" branch is needed: `first <=
+        # earliest_baseline_start` implies `first <= w.start` for every window, and the
+        # sum is already 8. An earlier draft had that branch; it was dead logic.
         first = first_seen.get(topic_id)
-        weeks = BASELINE_WINDOWS if first is not None and first <= earliest_baseline_start else 0
-        if weeks == 0:
-            # Count the complete windows the topic actually existed for, for display.
-            weeks = sum(1 for w in baseline_windows(as_of) if first is not None and first <= w.start)
+        weeks = sum(1 for w in baseline_windows(as_of) if first is not None and first <= w.start)
         prior_counts = [p.get(topic_id, {}).get("total", 0) for p in priors]
         scored.append(
             score_topic(
@@ -2919,22 +2965,409 @@ export function StalenessBanner({ computedAt }: { computedAt: string | null }) {
 }
 ```
 
-- [ ] **Step 8: Write the remaining widgets and the page**
+- [ ] **Step 8: Write `src/components/ChangeFeedWidget.tsx`**
 
-`ChangeFeedWidget.tsx` renders `data.days` as dated groups, each event linking to `/topics/{topic.id}` (FR-C-012 — papers have no detail route in sub-project A), with retractions and contradictions carrying `text-error` treatment so they are not buried under `new_paper` volume. `PersonalTopicsWidget.tsx` renders `data.blurb` above the per-topic rows and shows "No change this week" for a zero count. `DashboardPage.tsx` composes `StalenessBanner`, `ActivityWidget`, `ChangeFeedWidget`, and — only when `has_profile` is true — `PersonalTopicsWidget`.
+```tsx
+import { Link } from "react-router-dom";
+import type { ChangeFeedEvent, ChangeFeedResponse } from "../api/types";
 
-Each widget takes `data`/`isLoading`/`isError` props and renders its own error text rather than letting a failure bubble: one widget's endpoint failing must not blank the dashboard.
+// Retractions and contradictions are the highest-signal events and the ones that would
+// otherwise be buried: in a typical window `new_paper` outnumbers the other three types
+// combined. There is deliberately no type filter in v1 (OQ-C-005) -- this visual
+// distinction is what does the work a filter would.
+const WARNING_TYPES = new Set(["paper_retracted", "contradiction_flagged"]);
 
-- [ ] **Step 9: Write `DashboardPage.test.tsx`**
+const LABELS: Record<ChangeFeedEvent["event_type"], string> = {
+  new_paper: "New paper",
+  consensus_updated: "Consensus updated",
+  contradiction_flagged: "Contradiction flagged",
+  paper_retracted: "Retracted",
+};
 
-Cover, at minimum: the cold-start render (all three endpoints empty) shows the activity and change widgets and no personal widget; a user with `has_profile: false` sees no personal widget but no error either; one endpoint returning 500 leaves the other widgets rendered; the staleness banner appears for a `computed_at` older than 36 hours and not for a fresh one. Use MSW handlers for all three endpoints — `onUnhandledRequest` is `"error"`, so every request the page makes needs one.
+function EventRow({ event }: { event: ChangeFeedEvent }) {
+  const isWarning = WARNING_TYPES.has(event.event_type);
+  return (
+    <li className="flex items-baseline gap-2 text-xs">
+      <span
+        className={
+          isWarning
+            ? "shrink-0 rounded border border-error/40 px-1.5 font-semibold text-error"
+            : "shrink-0 rounded bg-surface-container px-1.5 text-on-surface-variant"
+        }
+      >
+        {LABELS[event.event_type]}
+      </span>
+      {/* Links to the TOPIC, not the paper: sub-project A gives papers no detail route,
+          and FR-C-012 requires every row to reach a real destination. */}
+      <Link to={`/topics/${event.topic.id}`} className="text-primary-container hover:underline">
+        {event.topic.canonical_label}
+      </Link>
+      {event.paper && <span className="text-on-surface-variant">{event.paper.title}</span>}
+    </li>
+  );
+}
 
-- [ ] **Step 10: Run the frontend suite and build**
+export function ChangeFeedWidget({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: ChangeFeedResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
+      <h2 className="mb-3 text-sm font-semibold text-on-surface">What changed</h2>
+
+      {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
+      {/* Rendered here rather than thrown: one endpoint failing must not blank the
+          dashboard, so every widget owns its own error surface. */}
+      {isError && (
+        <p className="text-xs text-error">
+          Couldn&apos;t load recent changes. The rest of the dashboard is unaffected.
+        </p>
+      )}
+
+      {data && data.total_events === 0 && !isLoading && (
+        // "No change", never "no results" (FR-C-015).
+        <p className="text-xs text-on-surface-variant">No change recorded in this period.</p>
+      )}
+
+      <div className="space-y-3">
+        {data?.days.map((day) => (
+          <div key={day.date}>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+              {new Date(`${day.date}T00:00:00Z`).toLocaleDateString(undefined, {
+                day: "numeric",
+                month: "short",
+                timeZone: "UTC",
+              })}
+            </p>
+            <ul className="space-y-1">
+              {day.events.map((event, index) => (
+                <EventRow key={`${event.detected_at}-${index}`} event={event} />
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+```
+
+The date is formatted with `timeZone: "UTC"` deliberately. `day.date` is a calendar date the backend already grouped in UTC; letting the browser reinterpret it in local time would shift the heading by a day for anyone west of UTC, so a viewer in Los Angeles would see events filed under the wrong date.
+
+- [ ] **Step 9: Write `src/components/PersonalTopicsWidget.tsx`**
+
+```tsx
+import { Link } from "react-router-dom";
+import type { PersonalDashboardResponse } from "../api/types";
+
+export function PersonalTopicsWidget({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: PersonalDashboardResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
+      <h2 className="mb-3 text-sm font-semibold text-on-surface">Your topics</h2>
+
+      {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
+      {isError && (
+        <p className="text-xs text-error">
+          Couldn&apos;t load your topics. The rest of the dashboard is unaffected.
+        </p>
+      )}
+
+      {/* Deterministic, not model-written (OQ-C-002). Rendered as plain text with no
+          "AI" framing, because it is not AI -- claiming otherwise in either direction
+          would misrepresent it. */}
+      {data?.blurb && (
+        <p className="mb-3 font-serif text-sm leading-relaxed text-on-surface">{data.blurb}</p>
+      )}
+
+      <ul className="space-y-1">
+        {data?.topics.map((row) => (
+          <li key={row.topic.id} className="flex items-baseline justify-between gap-2 text-xs">
+            <Link
+              to={`/topics/${row.topic.id}`}
+              className="text-primary-container hover:underline"
+            >
+              {row.topic.canonical_label}
+            </Link>
+            <span className="text-on-surface-variant">
+              {/* A quiet topic is listed with a zero count (FR-C-008), not dropped:
+                  dropping it would make the widget look like the user has fewer
+                  interests than they do, and "no change" is itself information. */}
+              {row.event_count === 0
+                ? "No change this week"
+                : `${row.event_count} ${row.event_count === 1 ? "change" : "changes"}`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+```
+
+- [ ] **Step 10: Write `src/pages/DashboardPage.tsx`**
+
+```tsx
+import { useActivityRanking, useChangeFeed, usePersonalDashboard } from "../api/hooks";
+import { ActivityWidget } from "../components/ActivityWidget";
+import { ChangeFeedWidget } from "../components/ChangeFeedWidget";
+import { PersonalTopicsWidget } from "../components/PersonalTopicsWidget";
+import { StalenessBanner } from "../components/StalenessBanner";
+import { useIdentity } from "../identity/identity";
+
+export function DashboardPage() {
+  const { userId } = useIdentity();
+  const activity = useActivityRanking();
+  const changes = useChangeFeed();
+  const personal = usePersonalDashboard(userId);
+
+  return (
+    <div>
+      <h1 className="mb-4 text-2xl font-semibold">Dashboard</h1>
+
+      <StalenessBanner computedAt={activity.data?.computed_at ?? null} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ActivityWidget
+          data={activity.data}
+          isLoading={activity.isLoading}
+          isError={activity.isError}
+        />
+        <ChangeFeedWidget
+          data={changes.data}
+          isLoading={changes.isLoading}
+          isError={changes.isError}
+        />
+      </div>
+
+      {/* Mounted only once the user has actually declared interests. Rendering an empty
+          "your topics" panel for every first-time visitor would occupy the primary
+          content area with a placeholder, which G-C-1 exists to prevent. */}
+      {personal.data?.has_profile && (
+        <div className="mt-4">
+          <PersonalTopicsWidget
+            data={personal.data}
+            isLoading={personal.isLoading}
+            isError={personal.isError}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+- [ ] **Step 11: Write `src/pages/DashboardPage.test.tsx`**
+
+```tsx
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { MemoryRouter } from "react-router-dom";
+import { IdentityProvider } from "../identity/identity";
+import { server } from "../test/server";
+import { DashboardPage } from "./DashboardPage";
+
+const EMPTY_ACTIVITY = { computed_at: null, window_start: null, window_end: null, topics: [] };
+const EMPTY_CHANGES = { days: [], total_events: 0 };
+const NO_PROFILE = {
+  has_profile: false,
+  computed_at: null,
+  window_start: null,
+  window_end: null,
+  topics: [],
+  blurb: null,
+};
+
+function handlers({ activity = EMPTY_ACTIVITY, changes = EMPTY_CHANGES, personal = NO_PROFILE } = {}) {
+  // MSW is configured with onUnhandledRequest: "error", so all three endpoints need a
+  // handler even when a test only cares about one of them.
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.json(activity)),
+    http.get("/dashboard/changes", () => HttpResponse.json(changes)),
+    http.get("/dashboard/personal", () => HttpResponse.json(personal)),
+  );
+}
+
+function renderPage() {
+  localStorage.setItem("athena_user_id", "00000000-0000-0000-0000-000000000001");
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <IdentityProvider>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </IdentityProvider>
+    </QueryClientProvider>,
+  );
+}
+
+test("cold start renders both global widgets rather than a placeholder", async () => {
+  // G-C-1: a first-time visitor with no interests and no data must still get a populated
+  // dashboard, not an empty-state panel occupying the primary content area.
+  handlers();
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.getByText(/what changed/i)).toBeInTheDocument();
+});
+
+test("a user without a profile sees no personal widget and no error", async () => {
+  handlers();
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.queryByText(/your topics/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
+});
+
+test("a user with a profile sees the personal widget and its blurb", async () => {
+  handlers({
+    personal: {
+      ...NO_PROFILE,
+      has_profile: true,
+      blurb: "10 new papers and 2 consensus updates across your 3 topics this week.",
+      topics: [
+        {
+          topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+          event_count: 0,
+          breakdown: { new_paper: 0, consensus_updated: 0, contradiction_flagged: 0, paper_retracted: 0 },
+          latest_event_at: null,
+        },
+      ],
+    },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/your topics/i)).toBeInTheDocument());
+  expect(screen.getByText(/10 new papers and 2 consensus updates/i)).toBeInTheDocument();
+  // FR-C-008: a quiet interest topic is listed with a zero count, not dropped.
+  expect(screen.getByText(/no change this week/i)).toBeInTheDocument();
+});
+
+test("one failing endpoint does not blank the other widgets", async () => {
+  // The load-bearing property of this page. Three independent queries feed it, and a
+  // single 500 must degrade one panel rather than the whole landing surface.
+  server.use(
+    http.get("/dashboard/activity", () => HttpResponse.text("boom", { status: 500 })),
+    http.get("/dashboard/changes", () =>
+      HttpResponse.json({
+        days: [
+          {
+            date: "2026-08-01",
+            events: [
+              {
+                event_type: "paper_retracted",
+                detected_at: "2026-08-01T06:12:44Z",
+                topic: { id: "t9", canonical_label: "GLP-1 receptor agonists" },
+                paper: { id: "p9", title: "Weight outcomes in a retrospective cohort" },
+                evidence_tier: null,
+              },
+            ],
+          },
+        ],
+        total_events: 1,
+      }),
+    ),
+    http.get("/dashboard/personal", () => HttpResponse.json(NO_PROFILE)),
+  );
+  renderPage();
+
+  await waitFor(() =>
+    expect(screen.getByText(/couldn't load topic activity/i)).toBeInTheDocument(),
+  );
+  expect(screen.getByText(/glp-1 receptor agonists/i)).toBeInTheDocument();
+});
+
+test("a retraction is visually distinguished from ordinary activity", async () => {
+  // OQ-C-005 chose no type filter for v1 on the grounds that this treatment does the
+  // work a filter would. If it stops happening, that decision is silently undone.
+  handlers({
+    changes: {
+      days: [
+        {
+          date: "2026-08-01",
+          events: [
+            {
+              event_type: "paper_retracted",
+              detected_at: "2026-08-01T06:12:44Z",
+              topic: { id: "t9", canonical_label: "GLP-1 receptor agonists" },
+              paper: { id: "p9", title: "Weight outcomes" },
+              evidence_tier: null,
+            },
+            {
+              event_type: "new_paper",
+              detected_at: "2026-08-01T06:12:03Z",
+              topic: { id: "t1", canonical_label: "Atrial fibrillation" },
+              paper: { id: "p1", title: "Anticoagulation in adults over 85" },
+              evidence_tier: "established",
+            },
+          ],
+        },
+      ],
+      total_events: 2,
+    },
+  });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText("Retracted")).toBeInTheDocument());
+  expect(screen.getByText("Retracted").className).toContain("text-error");
+  expect(screen.getByText("New paper").className).not.toContain("text-error");
+});
+
+test("the staleness banner appears when the data is older than 36 hours", async () => {
+  // FR-C-011. The job runs daily, so 36 hours means a run was missed; saying so is the
+  // difference between a user distrusting the numbers and distrusting the app.
+  const twoDaysAgo = new Date(Date.now() - 48 * 3_600_000).toISOString();
+  handlers({ activity: { ...EMPTY_ACTIVITY, computed_at: twoDaysAgo } });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/data as of/i));
+});
+
+test("no staleness banner for fresh data", async () => {
+  handlers({ activity: { ...EMPTY_ACTIVITY, computed_at: new Date().toISOString() } });
+  renderPage();
+
+  await waitFor(() => expect(screen.getByText(/most active topics/i)).toBeInTheDocument());
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+const FORBIDDEN = /trending|hot|popular|breakthrough|important|momentum|real-time|\blive\b|no results|nothing found/i;
+
+test("the assembled page never uses forbidden copy", async () => {
+  // Asserted on the whole page, not per component: the copy rules bind the surface a
+  // reader actually sees, and a widget could satisfy them alone while the composition
+  // does not.
+  handlers({
+    personal: { ...NO_PROFILE, has_profile: true, blurb: "No change in your 1 topic this week." },
+  });
+  const { container } = renderPage();
+
+  await waitFor(() => expect(screen.getByText(/your topics/i)).toBeInTheDocument());
+  expect(container.textContent).not.toMatch(FORBIDDEN);
+});
+```
+
+- [ ] **Step 12: Run the frontend suite and build**
 
 Run: `npx vitest run && npm run build`
 Expected: all pass, build clean.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 13: Commit**
 
 ```bash
 git add webapp/frontend/src
@@ -3013,14 +3446,206 @@ git commit -m "feat: make the dashboard the landing route"
 
 ---
 
+## Task 10: Wire DASHBOARD_ENABLED
+
+**Added 2026-09-25 after Task 9.** The Global Constraints say "Everything is gated behind
+`DASHBOARD_ENABLED`, default `false`", but no task ever allocated work to implement it:
+`dashboard_enabled` exists in `evidence_engine/config.py` and is read by nothing. Task 9's
+implementer found this and documented it honestly rather than quietly leaving it.
+
+That is a defect in this plan, not in any task's execution. Without it, merging makes the
+dashboard the landing route for every user immediately, and it shows an empty ranking
+until the daily job has run at least once. User decision: wire it before merge.
+
+**Files:**
+- Modify: `dashboard/flags.py` (create), `webapp/api.py`, `webapp/frontend/src/api/types.ts`, `src/api/hooks.ts`, `src/App.tsx`, `src/components/IconSidebar.tsx`
+- Test: `tests/dashboard/test_flags.py` (create), `tests/webapp/test_api.py`, `src/App.test.tsx`
+
+**Interfaces:**
+- Produces: `dashboard.flags.dashboard_enabled() -> bool`; `GET /features`; `useFeatures()`.
+
+The backend half is the real gate — it protects the API regardless of what any client
+does. The frontend half is presentation: it stops the app advertising a feature whose
+endpoints will refuse.
+
+- [ ] **Step 1: Write `dashboard/flags.py`**
+
+```python
+from evidence_engine.config import get_settings
+
+
+def dashboard_enabled() -> bool:
+    """Read at call time, not import time, so a test can monkeypatch the setting.
+
+    Mirrors synthesis/service.py's _synthesis_enabled, which is the established pattern
+    for a feature gate in this codebase.
+    """
+    return get_settings().dashboard_enabled
+```
+
+- [ ] **Step 2: Gate all five routes**
+
+Each of `GET /dashboard/activity`, `/dashboard/changes`, `/dashboard/personal`,
+`POST /interests` and `DELETE /interests/{topic_id}` returns **503** when the flag is off,
+before any other validation:
+
+```python
+    if not dashboard_enabled():
+        raise HTTPException(status_code=503, detail="Dashboard is not enabled")
+```
+
+503 rather than 404: the routes exist and will work once enabled, which is what the
+synthesis endpoint already returns for the same situation.
+
+**The check goes first.** Placing it after parameter validation would leak the routes'
+input contract to a caller who cannot use them, and would make a disabled endpoint return
+422 for bad input — two different answers to "is this available".
+
+- [ ] **Step 3: Add `GET /features`**
+
+```python
+@app.get("/features")
+def features_endpoint() -> dict:
+    """Flags the client needs in order to decide what to render.
+
+    Not gated: a client must be able to ask whether a feature is on. Returns only
+    booleans that are already public in effect -- never secrets, and never anything
+    user-specific, so it stays cacheable and needs no auth.
+    """
+    return {"dashboard_enabled": dashboard_enabled()}
+```
+
+- [ ] **Step 4: Frontend — the type and hook**
+
+`FeatureFlags { dashboard_enabled: boolean }` in `types.ts`; `useFeatures()` in `hooks.ts`
+following the existing `useQuery` conventions.
+
+- [ ] **Step 5: Gate the redirect and the nav**
+
+The root redirect must **fail closed**: while the flag is unknown, do not redirect to the
+dashboard. Render nothing at `/` until it resolves, then navigate. Redirecting to
+`/search` first and correcting afterwards would flash the wrong page for every enabled
+user, and defaulting to the dashboard would show it to disabled ones.
+
+`IconSidebar` omits the Dashboard entry entirely when the flag is off — a nav item leading
+to a page whose data all 503s is worse than no nav item.
+
+`/#/dashboard` itself stays routable either way. Someone with the link gets the page and
+its widgets' error states, which is honest; hiding the route would make the flag look like
+a bug to whoever is testing it.
+
+- [ ] **Step 6: Tests**
+
+Backend: each of the five routes returns 503 with the flag off and its normal status with
+it on; `/features` reports both states. Monkeypatch `dashboard.flags.dashboard_enabled`,
+matching how `tests/synthesis/test_service.py` patches `_synthesis_enabled`.
+
+Frontend: with the flag off, `/` lands on search and no Dashboard nav entry renders; with
+it on, `/` lands on the dashboard and the entry is first. **Assert the disabled case after
+the features query resolves** — this file has produced three racing negative assertions
+already, all of which passed because they checked absence before the state that would
+create it had arrived.
+
+- [ ] **Step 7: Verify and commit**
+
+```bash
+source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest -q
+cd webapp/frontend && npx vitest run && npm run build && npx playwright test
+```
+
+---
+
+## Task 11: Interest Management UI
+
+**Added 2026-09-26 after the whole-branch review.** `dashboard/interests.py`, both
+`/interests` endpoints and the `useAddInterest`/`useRemoveInterest` hooks are implemented
+and tested, but **no component imports either hook**. There is no affordance anywhere that
+lets a real user add an interest topic, and no other UI path to create an
+`InterestProfile` existed before this sub-project. So `has_profile` is always false,
+and `PersonalTopicsWidget`, the blurb and `personal_topic_summary`'s populated branch can
+never render outside tests.
+
+That is roughly half of C built and unreachable. The spec's component list already names
+`InterestTopicPicker` (section 8), so this is a step the plan omitted rather than new
+scope. User decision: build it before merge.
+
+**Files:**
+- Create: `webapp/frontend/src/components/InterestTopicPicker.tsx`, `InterestTopicPicker.test.tsx`
+- Modify: `src/components/PersonalTopicsWidget.tsx`, `src/pages/DashboardPage.tsx`, `src/pages/DashboardPage.test.tsx`
+
+**Interfaces:**
+- Consumes: `useAddInterest`, `useRemoveInterest`, `useIdentity` (all existing).
+
+- [ ] **Step 1: `InterestTopicPicker`**
+
+A labelled text input and a submit button calling `useAddInterest`. It must handle the
+four states the endpoint can return, because each means something different to the user:
+
+- **201** — added. Clear the input.
+- **200** — already an interest. Say so plainly; do not present it as an error, because
+  nothing went wrong.
+- **404** — unknown user. This is the identity being stale, not the input being bad.
+- **429** — rate limited. Say when to try again. Never reword this as a validation
+  failure; the request was fine and will work later.
+- **422** — the term could not be resolved to a research topic. This is the only one that
+  is about what the user typed.
+
+Disable the control while `isPending`: each submit is an outbound PubMed call, so a
+double-click costs a second one.
+
+- [ ] **Step 2: A remove control on each `PersonalTopicsWidget` row**
+
+Calling `useRemoveInterest`. It must carry an accessible name identifying WHICH topic it
+removes — `aria-label={`Remove ${topic.canonical_label}`}` — or a screen-reader user hears
+a list of identical "Remove" buttons.
+
+- [ ] **Step 3: Mount the picker**
+
+On `DashboardPage`, visible whether or not `has_profile` is true — it is the only way to
+go from no profile to having one, so hiding it behind `has_profile` would make the
+personal dashboard unreachable exactly as it is today.
+
+- [ ] **Step 4: Tests**
+
+Each of the five response states renders its own distinct message; the control is disabled
+while pending; removal calls the hook with the right topic id; the picker is present for a
+user with no profile.
+
+**Every negative assertion must wait for the state that would make the thing appear.**
+This file has produced five racing assertions across Tasks 8 and 10, each found only after
+the previous fix looked complete. `expect(queryBy(...)).not.toHaveAttribute(...)` passes
+vacuously when the query returns null — assert absence directly.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+cd webapp/frontend && npx vitest run && npm run build
+source .superpowers/sdd/c-env.sh && arch -x86_64 /Users/matthewhagy/Athena/.venv/bin/pytest -q
+```
+
+---
+
+## Task 12: Build the change_events index concurrently — DONE (`757b3e1`)
+
+Whole-branch review finding, applied inline. `ix_change_events_detected_at` is on
+`change_events`, an existing engine-owned table written continuously by ingestion; a plain
+`CREATE INDEX` locks it for the whole build. Split into its own non-transactional
+migration (`c41f8a20b7de`) using `CREATE INDEX CONCURRENTLY IF NOT EXISTS`, verified by
+building a scratch database from zero — moving an index between migrations risks fresh
+installs silently losing it, which applying to an already-indexed database cannot detect.
+
+---
+
 ## Self-Review
 
-**Spec coverage.** FR-C-001 → Tasks 4, 7. FR-C-002, FR-C-003 → Task 3, enforced in `trend.py` and asserted there. FR-C-004 → Tasks 3, 8. FR-C-005 → Tasks 5, 7. FR-C-006 → Task 5 (§14.3's exact predicate). FR-C-007 → Task 6 (§14.4's `scalar_one_or_none` rule). FR-C-008 → Task 6. FR-C-009 → Task 4. FR-C-010 → Task 4, with a test that plants an orphan generation. FR-C-011 → Tasks 4, 8 (`StalenessBanner`). FR-C-012 → Task 8. FR-C-013 → Task 6. FR-C-014 → Task 9. FR-C-015, FR-C-016 → Task 8, with a forbidden-copy regex and a tooltip test. FR-C-017 → satisfied by construction: no `dashboard/` module writes to an engine table; the only engine-side change is an additive index in Task 1.
+**Spec coverage.** FR-C-001 → Tasks 4, 7. FR-C-002, FR-C-003 → Task 3, enforced in `trend.py` and asserted there. FR-C-004 → Tasks 3, 8. FR-C-005 → Tasks 5, 7. FR-C-006 → Task 5 (§14.3's exact predicate). FR-C-007 → Task 6 (§14.4's `scalar_one_or_none` rule). FR-C-008 → Task 6. FR-C-009 → Task 4. FR-C-010 → Task 4, with a test that plants an orphan generation. FR-C-011 → Tasks 4, 8 (`StalenessBanner`). FR-C-012 → Task 8. FR-C-013 → Task 6. FR-C-014 → Task 9. FR-C-015, FR-C-016 → Task 8, with a forbidden-copy regex and a tooltip test. FR-C-017 → **not** satisfied by construction; that claim was false and survived two reviews. It reads true if you grep `dashboard/` for `session.add(Topic`, and is wrong two hops down the call chain: `POST /interests` → `add_user_interest` → `digest.profiles.add_interest` → `get_or_create_topic`, which inserts into `topics` and mutates `Topic.aliases` on an existing row. Confirmed by execution (topics count 2 → 3 on a single add). The constraint has been amended above to carve this out explicitly, since the write is unavoidable. Two safety consequences were fixed rather than documented: `Topic.aliases` had no size bound and was reachable from an unauthenticated endpoint whose rate limit is keyed on a freely-mintable `user_id`, so it is now capped at `MAX_ALIASES = 50` and deduplicated case- and whitespace-insensitively (`evidence_engine/topics/registry.py`). Engine-side schema changes remain additive: two indexes, Tasks 1 and 13.
 
 **Deliberately excluded, with reasons.** Per the decisions recorded above: no daily window toggle (OQ-C-003), no change-feed type filter (OQ-C-005), no LLM narrative (OQ-C-002 — a deterministic sentence instead). Sub-project B's synthesis engine is not called, even though it has landed. `digest/runner.py` is not modified — OQ-C-001 was resolved in `a5a4117` and the spec's §24 note about it is obsolete.
 
 **Known gap to watch during execution.** `refresh_activity_snapshots` computes nine windows with one grouped query each, which is fine at current corpus size but is O(windows) full-range scans over `change_events`. The `ix_change_events_detected_at` index added in Task 1 is what keeps that bounded; if the job gets slow, that index is the first thing to check, not the query count.
 
-**Placeholder scan.** No TBD/TODO markers. Tasks 1–7 carry complete code for every code step. Task 8 Steps 8 and 9 describe two widgets and a page test in prose rather than full code — deliberately, because they are compositions of components fully specified earlier in the same task and their exact markup should follow the conventions of the existing pages the implementer is told to read first. Every behavioural requirement they must satisfy is stated.
+**Placeholder scan.** No TBD/TODO markers. Every task carries complete code for every code step.
+
+Task 8's Steps 8 and 9 originally described two widgets and a page test in prose, justified as "compositions of components fully specified earlier". Pre-flight review rejected that: the writing-plans rubric calls a step that describes what to do without showing how a plan failure, and the justification did not make it compliant — it meant an implementer opening Task 8 got materially less than Tasks 1–7 give, while being reviewed to the same bar. Expanded 2026-09-17 into Steps 8–11 with full code for `ChangeFeedWidget`, `PersonalTopicsWidget`, `DashboardPage` and `DashboardPage.test.tsx`.
 
 **Type consistency.** `TopicCounts` and `ScoredTopic` field names match between Task 3's definition and Task 4's construction. `Window.start`/`.end` match between Tasks 2 and 4. `read_current_activity`, `read_change_feed`, `personal_topic_summary`, `render_blurb`, `add_user_interest`, `remove_user_interest` and `RateLimitExceeded` are called in Task 7 with exactly the signatures Tasks 4–6 define. The TypeScript interfaces in Task 8 mirror the JSON shapes Task 7 returns field for field, including the `blurb` key the endpoint adds to the personal summary.

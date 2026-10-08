@@ -130,3 +130,61 @@ export interface SynthesisResult {
   model_id: string | null;
   generated_at: string | null;
 }
+
+export interface ActivityBreakdown {
+  new_paper: number;
+  consensus_updated: number;
+  contradiction_flagged: number;
+  paper_retracted: number;
+}
+
+export interface ActivityRow {
+  topic: TopicRef;
+  rank: number;
+  event_count: number;
+  breakdown: ActivityBreakdown;
+  baseline_mean: number | null;
+  baseline_weeks: number;
+  trend_score: number | null;
+  is_newly_tracked: boolean;
+}
+
+export interface ActivityResponse {
+  computed_at: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  topics: ActivityRow[];
+}
+
+export interface ChangeFeedEvent {
+  event_type: "new_paper" | "consensus_updated" | "contradiction_flagged" | "paper_retracted";
+  detected_at: string;
+  topic: TopicRef;
+  paper: { id: string; title: string } | null;
+  evidence_tier: string | null;
+}
+
+export interface ChangeFeedResponse {
+  days: { date: string; events: ChangeFeedEvent[] }[];
+  total_events: number;
+}
+
+export interface PersonalTopicRow {
+  topic: TopicRef;
+  event_count: number;
+  breakdown: ActivityBreakdown;
+  latest_event_at: string | null;
+}
+
+export interface PersonalDashboardResponse {
+  has_profile: boolean;
+  computed_at: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  topics: PersonalTopicRow[];
+  blurb: string | null;
+}
+
+export interface FeatureFlags {
+  dashboard_enabled: boolean;
+}

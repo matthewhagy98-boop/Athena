@@ -1,0 +1,97 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import type { ActivityResponse } from "../api/types";
+
+// FR-C-016: the ranking measures how much new evidence was indexed, which is not a claim
+// about whether that evidence matters. The tooltip is the only thing standing between the
+// list and being read as an editorial judgement.
+const EXPLANATION =
+  "Ranked by volume of newly indexed and changed evidence in the last 7 days, not by scientific significance.";
+
+export function ActivityWidget({
+  data,
+  isLoading,
+  isError,
+}: {
+  data: ActivityResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const [explanationOpen, setExplanationOpen] = useState(false);
+
+  return (
+    <section className="rounded-lg border border-hairline bg-surface-container-lowest p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-on-surface">Most active topics</h2>
+        {/* A real disclosure button, not a `title` on a focusable span. FR-C-016's caveat
+            is the only thing stopping this ranking being read as an editorial judgement
+            about which topics matter, and it was delivered through a tooltip: `title` is
+            not announced reliably by screen readers, is invisible on touch entirely, and
+            a focusable <span> with no role is an a11y anti-pattern. The old test asserted
+            getByTitle, so the attribute was pinned and its reachability was not. */}
+        <button
+          type="button"
+          onClick={() => setExplanationOpen((open) => !open)}
+          aria-expanded={explanationOpen}
+          aria-controls="activity-explanation"
+          className="text-xs text-on-surface-variant underline decoration-dotted"
+        >
+          What does this mean?
+        </button>
+      </div>
+
+      {/* Always rendered, hidden when collapsed, rather than conditionally mounted.
+          `aria-controls` is an IDREF: with the paragraph unmounted the id did not exist in
+          the default state, so the attribute pointed at nothing (axe
+          aria-valid-attr-value). A `title` anti-pattern had been swapped for a real
+          pattern that was wired up only half the time. `hidden` keeps it out of the
+          accessibility tree and out of layout while the id stays resolvable. */}
+      <p
+        id="activity-explanation"
+        hidden={!explanationOpen}
+        className="mb-3 rounded bg-surface-container p-2 text-xs leading-relaxed text-on-surface-variant"
+      >
+        {EXPLANATION}
+      </p>
+
+      {isLoading && <p className="text-xs text-on-surface-variant">Loading…</p>}
+      {isError && (
+        <p className="text-xs text-error">
+          Couldn&apos;t load topic activity. The rest of the dashboard is unaffected.
+        </p>
+      )}
+
+      {data && data.topics.length === 0 && !isLoading && (
+        <p className="text-xs text-on-surface-variant">
+          No topic reached the activity threshold this week.
+        </p>
+      )}
+
+      <ol className="space-y-2">
+        {data?.topics.map((row) => (
+          <li key={row.topic.id} className="flex items-baseline gap-2 text-xs">
+            <span className="w-5 text-on-surface-variant">{row.rank}.</span>
+            <Link
+              to={`/topics/${row.topic.id}`}
+              className="font-medium text-primary-container hover:underline"
+            >
+              {row.topic.canonical_label}
+            </Link>
+            {/* The raw count is always shown (FR-C-004): a derived score alone is
+                unauditable, since the reader cannot tell 24 events from 5. */}
+            <span className="text-on-surface-variant">
+              {row.event_count} {row.event_count === 1 ? "change" : "changes"}
+            </span>
+            {row.is_newly_tracked && (
+              // "Newly tracked", never "new topic" -- the topic may be decades old; it is
+              // our tracking of it that is new.
+              <span className="rounded bg-surface-container px-1.5 text-on-surface-variant">
+                Newly tracked
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}

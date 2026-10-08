@@ -22,7 +22,7 @@ from evidence_engine.db.models import (
     Topic,
 )
 from webapp.models import SavedSearch
-from webapp.search_index import sync_search_index
+from webapp.search_index import rebuild_search_index
 
 
 def test_median_of_odd_and_even_counts():
@@ -65,7 +65,7 @@ def _topic_with_papers(db_session, label, count, velocity, weeks_ago=1):
             )
         )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
     return topic
 
 
@@ -88,7 +88,7 @@ def _lean_matching_papers(db_session, topic, count, base_date=date(2026, 8, 1)):
         )
         papers.append(paper)
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
     return papers
 
 
@@ -149,7 +149,7 @@ def test_insufficient_coverage_returns_no_series(db_session):
                 )
             )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
     saved = _saved_search(db_session, topic)
 
     result = saved_search_velocity(db_session, saved, weeks=12)
@@ -192,7 +192,7 @@ def test_uses_median_not_mean(db_session):
             )
         )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
     saved = _saved_search(db_session, topic)
 
     result = saved_search_velocity(db_session, saved, weeks=12)
@@ -254,7 +254,7 @@ def test_string_dates_in_query_params_still_return_ready(db_session):
             )
         )
     db_session.flush()
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     user = create_user(db_session, f"agg-coerce-{topic.mesh_id}@example.com")
     saved = SavedSearch(

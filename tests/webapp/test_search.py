@@ -11,7 +11,7 @@ from evidence_engine.db.models import (
     Topic,
 )
 from webapp.search import SearchFilters, search_papers
-from webapp.search_index import sync_search_index
+from webapp.search_index import rebuild_search_index
 
 
 def _seed_paper(db_session, topic, title, abstract, pub_date, tier, study_type, is_retracted=False):
@@ -39,7 +39,7 @@ def test_search_papers_matches_free_text_and_ranks_by_relevance(db_session):
         db_session, topic, "An unrelated paper about diabetes", "Glucose control in diabetic patients.",
         date(2026, 5, 2), EvidenceTier.EMERGING, StudyType.COHORT,
     )
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     page = search_papers(db_session, query="hypertension", filters=SearchFilters())
 
@@ -68,7 +68,7 @@ def test_search_papers_filters_by_topic_tier_study_type_and_date_range(db_sessio
     _seed_paper(
         db_session, topic_a, "Out of date range", "abstract", date(2020, 1, 1), EvidenceTier.ESTABLISHED, StudyType.RCT
     )
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     filters = SearchFilters(
         topic_id=topic_a.id,
@@ -92,7 +92,7 @@ def test_search_papers_excludes_retracted_by_default_and_includes_with_flag(db_s
         db_session, topic, "A retracted paper", "abstract", date(2026, 4, 1), EvidenceTier.ESTABLISHED, StudyType.RCT,
         is_retracted=True,
     )
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     default_page = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id))
     assert default_page.total == 0
@@ -113,7 +113,7 @@ def test_search_papers_paginates_results(db_session):
         _seed_paper(
             db_session, topic, f"Paper {i}", "abstract", date(2026, 1, i + 1), EvidenceTier.ESTABLISHED, StudyType.RCT
         )
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     page1 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=1, page_size=2)
     page2 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=2, page_size=2)
@@ -145,7 +145,7 @@ def test_search_papers_deterministic_pagination_with_tied_publication_dates(db_s
             db_session, topic, f"Paper {i}", "abstract", tied_date, EvidenceTier.ESTABLISHED, StudyType.RCT
         )
         paper_ids.append(paper.id)
-    sync_search_index(db_session)
+    rebuild_search_index(db_session)
 
     # Query all pages with page_size=2 to force pagination
     page1 = search_papers(db_session, query=None, filters=SearchFilters(topic_id=topic.id), page=1, page_size=2)
