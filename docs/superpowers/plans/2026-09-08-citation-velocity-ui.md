@@ -1821,6 +1821,77 @@ git commit -m "feat: add citation history chart and saved-search velocity trend"
 > the discontinuity intact and the sparkline still drew the cliff. Truncating at the merge
 > is what shipped.
 
+> **Amendment, 2026-09-16 (second).** The sparkline resize above fixed one cause of
+> layout shift on the badge but not the invariant itself, and a browser measurement
+> found the region still growing. Two changes, both measured in Chromium rather than
+> argued from the markup:
+>
+> **The badge region now truncates to a single line** (`min-h-5 truncate`). `min-h-5`
+> reserved one line but nothing held the content *to* one line: a ready velocity emits
+> the figure, a percentile clause and an "as of N days ago" suffix, and that text
+> wrapped -- growing every affected row by 13px when the velocity arrived -- at every
+> width at or below **900px**, an ordinary laptop-with-a-sidebar width, not just mobile.
+> The suspected culprit, the sparkline's 64px of inline width, turned out to be a red
+> herring at those widths: with the sparkline suppressed the region still measured 32px
+> of the 33px, so the text was wrapping on its own. The sparkline only adds a further
+> line below ~500px. Truncation was chosen over reserving two lines because the badge is
+> supplementary and a second reserved line costs vertical space on all 50 rows.
+> `e2e/velocity-badge-layout.spec.ts` measures the region at 1280/900/768/375px with and
+> without a worst-case velocity; jsdom cannot see any of this.
+>
+> **`VelocitySparkline` no longer uses Recharts.** Deferred twice as orthogonal, then
+> measured on a stubbed 50-row page: the `ResponsiveContainer` expanded to **1250 DOM
+> nodes, 54% of the page's entire element count**, plus a `ResizeObserver` per row, and
+> took 160-243ms to mount. A hand-computed `<polyline>` draws the same picture in 150
+> nodes (2 per sparkline) and mounts in 30-37ms. `CitationHistoryChart` keeps Recharts
+> and should -- that is one large interactive chart, which is what the library is for.
+> Visual treatment is unchanged (teal `#006a61`, `strokeWidth` 1.5, no dots,
+> `aria-hidden`, self-suppression below three points) with one honest difference: the old
+> `type="monotone"` drew a smoothed cubic curve, the polyline draws straight segments.
+> At 64x16px carrying 3-12 points, that is not a perceptible change. The gain beyond
+> cost is testability: the geometry is computed in `sparklinePoints` and renders in
+> jsdom, so the axis direction, ordering, flat-series case and box bounds are now
+> asserted as coordinates instead of as class names.
+>
+> **Mutation results.** Both changes were verified by mutation. Removing `truncate`
+> fails the browser test at 900/768/375px (20px -> 33/33/369px) and, correctly, not at
+> 1280px, where nothing wraps. Eight mutants of the sparkline -- inverted y axis, no
+> flat-series guard, reversed x order, wrong stroke colour, box overflow, filled
+> polyline, loosened suppression threshold and wrong stroke width -- are all killed.
+> One mutant deliberately survives and is not a gap:
+> reverting the sparkline to `h-5`/`align-middle` no longer shifts anything, because
+> `truncate`'s `overflow: hidden` now absorbs it. `h-4` is kept as defence in depth and
+> stays pinned by the unit test.
+>
+> **Also found: the search page scrolled sideways below 768px** (`scrollWidth` 696px in
+> a 375px viewport), squeezing the result card's `min-w-0` column to literally zero.
+> It reproduced with no velocity served at all, so it predated this work; it was first
+> recorded here as out of scope, then fixed on user instruction. Three causes, found by
+> measuring the box tree rather than reading the markup:
+>
+> 1. `SearchPage`'s two-column flex never stacked. `FilterSidebar` is `w-52 shrink-0`
+>    (208px), so with the shell's padding it left the results column 47px of a 375px
+>    screen against ~123px of min-content. Now `flex-col md:flex-row`. This was the
+>    load-bearing cause.
+> 2. The shell's `px-12` spent 96px -- a quarter of a phone screen -- on padding before
+>    any content. Now `px-4 md:px-12`, which takes the card's text column from ~219px
+>    to 281px.
+> 3. `FilterSidebar` kept its 208px column width and right-hand divider when stacked.
+>    Now `w-full md:w-52` with the divider moving to the bottom edge below `md`.
+>
+> A fourth cause was transient and would have been missed by any steady-state check:
+> until the Material Symbols font loads, each icon renders its ligature NAME as literal
+> text ("bookmark_add"), several times wider than the glyph, which pushed the mobile
+> bottom bar 57px past the viewport for the first ~300ms. `font-display: block` does not
+> help -- the invisible fallback still occupies the fallback's width -- so the icon box
+> is pinned to `width: 1em` with `overflow: hidden`, which holds even if the font never
+> loads. `e2e/responsive-layout.spec.ts` blocks the webfonts outright rather than racing
+> a timer, so the worst case is the case under test.
+>
+> All four are mutation-verified, and a desktop test pins the `md` breakpoint from the
+> other side: reverting either the padding or the sidebar width above `md` fails, so the
+> desktop design cannot drift while the mobile one is being fixed.
+
 **Placeholder scan.** No TBD/TODO markers; every code step carries complete code; every test asserts specific values.
 
 **Type consistency.** `PaperVelocity` fields match between Task 4's TypeScript and Task 1's Python serialization field-for-field, including `computed_at` being nullable (Task 1 emits `None` for a paper with no cache row — Task 4's type says `string | null`, and Task 5's `daysSince` handles null). `VelocitySparkline`'s `points: number[]` matches its only caller. `saved_search_velocity(session, saved_search, weeks)` is called in Task 3 with exactly that signature.
